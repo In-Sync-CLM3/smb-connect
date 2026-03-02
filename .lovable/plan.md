@@ -1,39 +1,26 @@
 
 
-# Fix: CSS Not Loading on Advaita Landing Page
+# Fix: Open Graph / Link Preview Showing Lovable Branding
 
-## Root Cause
+## Problem
+In `index.html`, the OG and Twitter meta tags use Lovable's default image and Twitter handle:
+- `og:image` → `https://lovable.dev/opengraph-image-p98pqg.png` (Lovable logo)
+- `twitter:image` → same Lovable image
+- `twitter:site` → `@lovable_dev`
 
-**DOMPurify removes HTML comments by default.** The script-preservation fix from the last edit uses `<!--SMB_SCRIPT_N-->` comment placeholders — these are stripped during sanitization. The re-injection `.replace()` finds nothing to replace, so **all extracted scripts are silently lost**.
+This is why WhatsApp (and any social platform) shows the Lovable preview when sharing smbconnect.in.
 
-The Advaita page loads Tailwind CSS via `<script src="https://cdn.tailwindcss.com"></script>`. When that script tag is lost, every Tailwind utility class produces no styling — hence the broken CSS.
+## Fix in `index.html`
 
-## Fix
+Update lines 19 and 22-23:
 
-**Skip DOMPurify entirely.** The HTML is already rendered inside a sandboxed iframe (`sandbox="allow-scripts allow-forms allow-same-origin"`), which provides security isolation. DOMPurify is redundant here and actively breaks the custom HTML.
+1. **`og:image`** → Point to the SMB Connect logo at `/smb-connect-logo.png` (already exists in `public/`). Use the full absolute URL: `https://smbconnect.in/smb-connect-logo.png`
+2. **`twitter:image`** → Same absolute URL
+3. **`twitter:site`** → Update to SMB Connect's Twitter handle (or remove if none exists)
+4. **Add `og:url`** → `https://smbconnect.in`
 
-### Change in `src/pages/public/EventLandingPageView.tsx`
-
-Replace the entire sanitization block (lines 207–226) with a simple pass-through:
-
-```typescript
-const getEnhancedHtml = (html: string, cssContent?: string | null, pages?: PageInfo[], registrationFee?: number | null, pageId?: string): string => {
-    // No DOMPurify — content is rendered in a sandboxed iframe which provides isolation
-    let sanitizedHtml = html;
-
-    // Inject CSS if present
-    // ... rest unchanged
-```
-
-This removes ~20 lines (script extraction, DOMPurify call, script re-injection) and replaces them with one line.
-
-## Why This Is Safe
-
-The iframe already has `sandbox="allow-scripts allow-forms allow-same-origin"` which:
-- Prevents the content from accessing the parent page's DOM
-- Blocks popups, top-level navigation, and plugin access
-- The `postMessage` API is the only communication channel (by design)
+Note: After deploying, social platforms cache OG images. WhatsApp may take time to refresh. You can force re-scrape on Facebook via the [Sharing Debugger](https://developers.facebook.com/tools/debug/).
 
 ## Files Changed
-- `src/pages/public/EventLandingPageView.tsx` — remove DOMPurify sanitization, pass HTML through directly
+- `index.html` — update OG image URLs and Twitter handle
 
