@@ -75,6 +75,7 @@ import CreateLandingPage from "./pages/admin/CreateLandingPage";
 import EventLandingPageView from "./pages/public/EventLandingPageView";
 import CouponManagement from "./pages/admin/CouponManagement";
 import EventRegistrations from "./pages/admin/EventRegistrations";
+import DataExport from "./pages/admin/DataExport";
 
 const queryClient = new QueryClient();
 
