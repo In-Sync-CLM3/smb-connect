@@ -213,8 +213,16 @@ const AppContent = () => {
                 <AdminCompanyRequests />
               </ProtectedRoute>
             } 
+           />
+          <Route 
+            path="/admin/data-export" 
+            element={
+              <ProtectedRoute>
+                <DataExport />
+              </ProtectedRoute>
+            } 
           />
-          
+
           <Route 
             path="/admin/create-association"
             element={
