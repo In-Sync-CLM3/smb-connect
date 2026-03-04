@@ -1,39 +1,26 @@
 
 
-# Database-Level CSV Export via Edge Function
+# Fix: Open Graph / Link Preview Showing Lovable Branding
 
 ## Problem
-The current client-side approach is limited by RLS policies and the JS client's constraints. The user wants a proper database-level export that bypasses RLS and handles all tables reliably.
+In `index.html`, the OG and Twitter meta tags use Lovable's default image and Twitter handle:
+- `og:image` → `https://lovable.dev/opengraph-image-p98pqg.png` (Lovable logo)
+- `twitter:image` → same Lovable image
+- `twitter:site` → `@lovable_dev`
 
-## Approach
-Create an edge function `export-table-csv` that uses the **service role key** (already configured) to query any table directly at the database level, bypassing RLS. It returns raw CSV data as a downloadable response.
+This is why WhatsApp (and any social platform) shows the Lovable preview when sharing smbconnect.in.
 
-## Implementation
+## Fix in `index.html`
 
-### 1. Create edge function: `supabase/functions/export-table-csv/index.ts`
-- Accepts `{ table: string }` or `{ tables: string[] }` in POST body
-- Validates the table name against an allowlist (prevents SQL injection)
-- Uses `createClient` with `SUPABASE_SERVICE_ROLE_KEY` to bypass RLS
-- Fetches all rows using paginated `.range()` calls with service role
-- Converts to CSV server-side and returns as `text/csv` with `Content-Disposition` header
-- Authenticates the caller and verifies they are an admin via `admin_users` table
+Update lines 19 and 22-23:
 
-### 2. Update `src/pages/admin/DataExport.tsx`
-- Replace the client-side `fetchAllRows` with calls to the edge function
-- The edge function returns CSV directly, so the client just triggers the download
-- Keep the same UI (table selection, checkboxes, download buttons)
+1. **`og:image`** → Point to the SMB Connect logo at `/smb-connect-logo.png` (already exists in `public/`). Use the full absolute URL: `https://smbconnect.in/smb-connect-logo.png`
+2. **`twitter:image`** → Same absolute URL
+3. **`twitter:site`** → Update to SMB Connect's Twitter handle (or remove if none exists)
+4. **Add `og:url`** → `https://smbconnect.in`
 
-### 3. Config
-- Add function config in `supabase/config.toml` with `verify_jwt = false` (auth checked in code)
+Note: After deploying, social platforms cache OG images. WhatsApp may take time to refresh. You can force re-scrape on Facebook via the [Sharing Debugger](https://developers.facebook.com/tools/debug/).
 
-## Key Details
-- **Security**: Edge function verifies the caller is an active admin before allowing export
-- **No RLS limits**: Service role key bypasses all RLS policies
-- **No row limits**: Paginated fetching server-side ensures all rows are captured
-- **Allowlist**: Only pre-approved table names are accepted, preventing arbitrary table access
-
-### Files
-- **Create**: `supabase/functions/export-table-csv/index.ts`
-- **Modify**: `src/pages/admin/DataExport.tsx` (call edge function instead of client queries)
-- **Modify**: `supabase/config.toml` (add function config)
+## Files Changed
+- `index.html` — update OG image URLs and Twitter handle
 

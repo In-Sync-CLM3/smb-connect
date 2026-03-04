@@ -50,3 +50,6 @@ verify_jwt = false
 
 [functions.validate-coupon]
 verify_jwt = false
+
+[functions.export-table-csv]
+verify_jwt = false

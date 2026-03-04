@@ -26,25 +26,7 @@ const EXPORTABLE_TABLES = [
 
 type TableName = typeof EXPORTABLE_TABLES[number];
 
-function escapeCSVValue(value: unknown): string {
-  if (value === null || value === undefined) return '';
-  const str = typeof value === 'object' ? JSON.stringify(value) : String(value);
-  if (str.includes(',') || str.includes('"') || str.includes('\n') || str.includes('\r')) {
-    return `"${str.replace(/"/g, '""')}"`;
-  }
-  return str;
-}
-
-function convertToCSV(data: Record<string, unknown>[]): string {
-  if (data.length === 0) return '';
-  const headers = Object.keys(data[0]);
-  const headerRow = headers.map(escapeCSVValue).join(',');
-  const rows = data.map(row => headers.map(h => escapeCSVValue(row[h])).join(','));
-  return [headerRow, ...rows].join('\n');
-}
-
-function downloadCSV(csv: string, filename: string) {
-  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -53,22 +35,34 @@ function downloadCSV(csv: string, filename: string) {
   URL.revokeObjectURL(url);
 }
 
-async function fetchAllRows(tableName: string): Promise<Record<string, unknown>[]> {
-  let allData: Record<string, unknown>[] = [];
-  let from = 0;
-  const step = 1000;
-  while (true) {
-    const { data, error } = await supabase
-      .from(tableName as any)
-      .select('*')
-      .range(from, from + step - 1);
-    if (error) throw error;
-    if (!data || data.length === 0) break;
-    allData = [...allData, ...(data as unknown as Record<string, unknown>[])];
-    if (data.length < step) break;
-    from += step;
+async function exportTableViaEdge(table: string): Promise<{ rowCount: number }> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) throw new Error('Not authenticated');
+
+  const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
+  const response = await fetch(
+    `https://${projectId}.supabase.co/functions/v1/export-table-csv`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.access_token}`,
+        'apikey': import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+      },
+      body: JSON.stringify({ table }),
+    }
+  );
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({ error: 'Export failed' }));
+    throw new Error(err.error || `HTTP ${response.status}`);
   }
-  return allData;
+
+  const rowCount = parseInt(response.headers.get('X-Row-Count') || '0', 10);
+  const blob = await response.blob();
+  const timestamp = new Date().toISOString().slice(0, 10);
+  downloadBlob(blob, `${table}_${timestamp}.csv`);
+  return { rowCount };
 }
 
 export default function DataExport() {
@@ -96,16 +90,13 @@ export default function DataExport() {
   const exportTable = async (table: TableName) => {
     setExporting(prev => new Set(prev).add(table));
     try {
-      const data = await fetchAllRows(table);
-      setRowCounts(prev => ({ ...prev, [table]: data.length }));
-      if (data.length === 0) {
+      const { rowCount } = await exportTableViaEdge(table);
+      setRowCounts(prev => ({ ...prev, [table]: rowCount }));
+      if (rowCount === 0) {
         toast({ title: `${table}`, description: 'No data found in this table.' });
         return;
       }
-      const csv = convertToCSV(data);
-      const timestamp = new Date().toISOString().slice(0, 10);
-      downloadCSV(csv, `${table}_${timestamp}.csv`);
-      toast({ title: 'Downloaded', description: `${table} — ${data.length} rows` });
+      toast({ title: 'Downloaded', description: `${table} — ${rowCount} rows` });
     } catch (error: any) {
       console.error(`Export error for ${table}:`, error);
       toast({ title: 'Export Failed', description: `${table}: ${error.message}`, variant: 'destructive' });
@@ -133,7 +124,7 @@ export default function DataExport() {
           <BackButton fallbackPath="/admin/actions" variant="ghost" />
           <div>
             <h1 className="text-2xl font-bold">Data Export</h1>
-            <p className="text-sm text-muted-foreground">Download database tables as CSV for backup</p>
+            <p className="text-sm text-muted-foreground">Download database tables as CSV for backup (server-side, bypasses row limits)</p>
           </div>
         </div>
       </header>
