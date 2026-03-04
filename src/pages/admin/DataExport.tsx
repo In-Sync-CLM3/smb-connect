@@ -64,7 +64,7 @@ async function fetchAllRows(tableName: string): Promise<Record<string, unknown>[
       .range(from, from + step - 1);
     if (error) throw error;
     if (!data || data.length === 0) break;
-    allData = [...allData, ...(data as Record<string, unknown>[])];
+    allData = [...allData, ...(data as unknown as Record<string, unknown>[])];
     if (data.length < step) break;
     from += step;
   }
