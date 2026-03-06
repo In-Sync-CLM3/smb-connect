@@ -22,6 +22,10 @@ jobs:
       - name: Build And Deploy
         id: builddeploy
         uses: Azure/static-web-apps-deploy@v1
+        env:
+          VITE_SUPABASE_PROJECT_ID: "rzbtuvuqtuhjfkhgckwp"
+          VITE_SUPABASE_URL: "https://rzbtuvuqtuhjfkhgckwp.supabase.co"
+          VITE_SUPABASE_PUBLISHABLE_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ6YnR1dnVxdHVoamZraGdja3dwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI2MjM1NzMsImV4cCI6MjA4ODE5OTU3M30.a3Fqf5Z_IOwQDz2k_wdb9hluudlj5VICsyAsC33KMxs"
         with:
           azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN_GENTLE_FIELD_0D01A791E }}
           repo_token: ${{ secrets.GITHUB_TOKEN }} # Used for Github integrations (i.e. PR comments)

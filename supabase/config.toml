@@ -1,13 +1,10 @@
-project_id = "jqynxytwngtytvuzucuo"
+project_id = "rzbtuvuqtuhjfkhgckwp"
 
 [functions.admin-reset-user-password]
 verify_jwt = false
 
 [functions.receive-email]
 verify_jwt = false
-
-[functions.send-member-invitation]
-verify_jwt = true
 
 [functions.send-company-invitation]
 verify_jwt = true
@@ -50,6 +47,39 @@ verify_jwt = false
 
 [functions.validate-coupon]
 verify_jwt = false
+
+[functions.send-whatsapp]
+verify_jwt = true
+
+[functions.send-bulk-whatsapp]
+verify_jwt = true
+
+[functions.send-email]
+verify_jwt = true
+
+[functions.send-bulk-email]
+verify_jwt = true
+
+[functions.receive-email-events]
+verify_jwt = false
+
+[functions.verify-company-invitation]
+verify_jwt = false
+
+[functions.parse-email-list]
+verify_jwt = true
+
+[functions.parse-whatsapp-list]
+verify_jwt = true
+
+[functions.hard-delete-associations]
+verify_jwt = true
+
+[functions.hard-delete-companies]
+verify_jwt = true
+
+[functions.hard-delete-users]
+verify_jwt = true
 
 [functions.export-table-csv]
 verify_jwt = false

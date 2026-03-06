@@ -19,12 +19,13 @@ serve(async (req) => {
   }
 
   try {
-    const TWILIO_ACCOUNT_SID = Deno.env.get('TWILIO_ACCOUNT_SID');
-    const TWILIO_AUTH_TOKEN = Deno.env.get('TWILIO_AUTH_TOKEN');
-    const TWILIO_WHATSAPP_FROM = Deno.env.get('TWILIO_WHATSAPP_FROM');
+    const EXOTEL_SID = Deno.env.get('EXOTEL_SID');
+    const EXOTEL_API_KEY = Deno.env.get('EXOTEL_API_KEY');
+    const EXOTEL_API_TOKEN = Deno.env.get('EXOTEL_API_TOKEN');
+    const EXOTEL_SENDER_NUMBER = Deno.env.get('EXOTEL_SENDER_NUMBER');
 
-    if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN || !TWILIO_WHATSAPP_FROM) {
-      throw new Error('Twilio credentials are not configured');
+    if (!EXOTEL_SID || !EXOTEL_API_KEY || !EXOTEL_API_TOKEN || !EXOTEL_SENDER_NUMBER) {
+      throw new Error('Exotel credentials are not configured');
     }
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
@@ -54,39 +55,57 @@ serve(async (req) => {
       errors: [] as string[],
     };
 
-    // Send WhatsApp messages in batches with timeout protection
+    // Send WhatsApp messages in batches via Exotel
     const BATCH_SIZE = 15;
     const REQUEST_TIMEOUT = 30000;
-    const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json`;
-    const auth = btoa(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`);
+    const senderNumber = EXOTEL_SENDER_NUMBER.replace(/^\+/, '');
+    const exotelUrl = `https://api.exotel.com/v2/accounts/${EXOTEL_SID}/messages`;
+    const auth = btoa(`${EXOTEL_API_KEY}:${EXOTEL_API_TOKEN}`);
 
     for (let i = 0; i < recipients.length; i += BATCH_SIZE) {
       const batch = recipients.slice(i, i + BATCH_SIZE);
-      
+
       await Promise.all(
         batch.map(async (recipient) => {
-          const timeoutPromise = new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('Request timeout')), REQUEST_TIMEOUT)
-          );
-          
-          const sendPromise = (async () => {
           try {
-            const formData = new URLSearchParams();
-            formData.append('From', `whatsapp:${TWILIO_WHATSAPP_FROM}`);
-            formData.append('To', `whatsapp:${recipient.phone}`);
-            formData.append('Body', messageData.message);
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
 
-            const twilioResponse = await fetch(twilioUrl, {
+            const recipientPhone = recipient.phone.replace(/^\+/, '');
+            const exotelPayload = {
+              custom_data: senderNumber,
+              whatsapp: {
+                messages: [
+                  {
+                    from: senderNumber,
+                    to: recipientPhone,
+                    content: {
+                      recipient_type: "individual",
+                      type: "text",
+                      text: {
+                        body: messageData.message,
+                        preview_url: false,
+                      },
+                    },
+                  },
+                ],
+              },
+            };
+
+            const exotelResponse = await fetch(exotelUrl, {
               method: 'POST',
               headers: {
                 'Authorization': `Basic ${auth}`,
-                'Content-Type': 'application/x-www-form-urlencoded',
+                'Content-Type': 'application/json',
               },
-              body: formData.toString(),
+              body: JSON.stringify(exotelPayload),
+              signal: controller.signal,
             });
 
-            if (!twilioResponse.ok) {
-              const errorText = await twilioResponse.text();
+            clearTimeout(timeoutId);
+
+            if (!exotelResponse.ok) {
+              const errorText = await exotelResponse.text();
               console.error(`Failed to send to ${recipient.phone}:`, errorText);
               results.failed++;
               results.errors.push(`${recipient.phone}: ${errorText}`);
@@ -95,14 +114,6 @@ serve(async (req) => {
             }
           } catch (error: any) {
             console.error(`Error sending to ${recipient.phone}:`, error);
-            results.failed++;
-            results.errors.push(`${recipient.phone}: ${error.message}`);
-          }
-          })();
-
-          try {
-            await Promise.race([sendPromise, timeoutPromise]);
-          } catch (error: any) {
             results.failed++;
             results.errors.push(`${recipient.phone}: ${error.message}`);
           }

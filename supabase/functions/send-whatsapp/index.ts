@@ -25,12 +25,13 @@ serve(async (req) => {
   }
 
   try {
-    const TWILIO_ACCOUNT_SID = Deno.env.get('TWILIO_ACCOUNT_SID');
-    const TWILIO_AUTH_TOKEN = Deno.env.get('TWILIO_AUTH_TOKEN');
-    const TWILIO_WHATSAPP_FROM = Deno.env.get('TWILIO_WHATSAPP_FROM');
+    const EXOTEL_SID = Deno.env.get('EXOTEL_SID');
+    const EXOTEL_API_KEY = Deno.env.get('EXOTEL_API_KEY');
+    const EXOTEL_API_TOKEN = Deno.env.get('EXOTEL_API_TOKEN');
+    const EXOTEL_SENDER_NUMBER = Deno.env.get('EXOTEL_SENDER_NUMBER');
 
-    if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN || !TWILIO_WHATSAPP_FROM) {
-      throw new Error('Twilio credentials are not configured');
+    if (!EXOTEL_SID || !EXOTEL_API_KEY || !EXOTEL_API_TOKEN || !EXOTEL_SENDER_NUMBER) {
+      throw new Error('Exotel credentials are not configured');
     }
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
@@ -65,44 +66,64 @@ serve(async (req) => {
         .eq('id', conversationId);
     }
 
-    // Send WhatsApp message via Twilio
-    const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json`;
-    const auth = btoa(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`);
+    // Send WhatsApp message via Exotel
+    const exotelUrl = `https://api.exotel.com/v2/accounts/${EXOTEL_SID}/messages`;
+    const auth = btoa(`${EXOTEL_API_KEY}:${EXOTEL_API_TOKEN}`);
 
-    const formData = new URLSearchParams();
-    formData.append('From', `whatsapp:${TWILIO_WHATSAPP_FROM}`);
-    formData.append('To', `whatsapp:${messageData.recipientPhone}`);
-    formData.append('Body', messageData.message);
+    const senderNumber = EXOTEL_SENDER_NUMBER.replace(/^\+/, '');
+    const recipientPhone = messageData.recipientPhone.replace(/^\+/, '');
 
-    const twilioResponse = await fetch(twilioUrl, {
+    const exotelPayload = {
+      custom_data: senderNumber,
+      whatsapp: {
+        messages: [
+          {
+            from: senderNumber,
+            to: recipientPhone,
+            content: {
+              recipient_type: "individual",
+              type: "text",
+              text: {
+                body: messageData.message,
+                preview_url: false,
+              },
+            },
+          },
+        ],
+      },
+    };
+
+    const exotelResponse = await fetch(exotelUrl, {
       method: 'POST',
       headers: {
         'Authorization': `Basic ${auth}`,
-        'Content-Type': 'application/x-www-form-urlencoded',
+        'Content-Type': 'application/json',
       },
-      body: formData.toString(),
+      body: JSON.stringify(exotelPayload),
     });
 
-    if (!twilioResponse.ok) {
-      const errorText = await twilioResponse.text();
-      console.error('Twilio error:', errorText);
+    if (!exotelResponse.ok) {
+      const errorText = await exotelResponse.text();
+      console.error('Exotel error:', errorText);
       throw new Error(`Failed to send WhatsApp message: ${errorText}`);
     }
 
-    const twilioData = await twilioResponse.json();
-    console.log('Twilio response:', twilioData);
+    const exotelData = await exotelResponse.json();
+    console.log('Exotel response:', exotelData);
+
+    const externalMessageId = exotelData?.response?.whatsapp?.messages?.[0]?.data?.sid || null;
 
     // Store message in database
     const { data: message, error: messageError } = await supabase
       .from('whatsapp_messages')
       .insert({
         conversation_id: conversationId,
-        sender_phone: TWILIO_WHATSAPP_FROM,
+        sender_phone: EXOTEL_SENDER_NUMBER,
         sender_name: messageData.senderName,
         recipient_phone: messageData.recipientPhone,
         body_text: messageData.message,
         direction: 'outbound',
-        external_message_id: twilioData.sid,
+        external_message_id: externalMessageId,
         sent_at: new Date().toISOString(),
       })
       .select()
