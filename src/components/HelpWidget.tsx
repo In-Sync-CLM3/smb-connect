@@ -2,17 +2,14 @@ import { useEffect } from 'react';
 import { useRoleContext } from '@/contexts/RoleContext';
 
 export const HelpWidget = () => {
-  const { selectedRole, availableRoles } = useRoleContext();
-  const isAdmin = selectedRole === 'admin' || selectedRole === 'god-admin' || availableRoles?.isAdmin;
+  const { selectedRole } = useRoleContext();
+  const isAdmin = selectedRole === 'admin' || selectedRole === 'god-admin';
 
   useEffect(() => {
-    // Remove any existing widget elements first
-    const existingScript = document.getElementById('help-widget-script');
-    if (existingScript) existingScript.remove();
-    const existingWidget = document.querySelector('[data-help-widget], .help-widget-container, iframe[src*="help-widget"]');
-    if (existingWidget) existingWidget.remove();
-
     if (!isAdmin) return;
+
+    const existingScript = document.getElementById('help-widget-script');
+    if (existingScript) return;
 
     const script = document.createElement('script');
     script.id = 'help-widget-script';
@@ -23,7 +20,8 @@ export const HelpWidget = () => {
     return () => {
       const el = document.getElementById('help-widget-script');
       if (el) el.remove();
-      const widget = document.querySelector('[data-help-widget], .help-widget-container, iframe[src*="help-widget"]');
+      // Clean up any widget DOM the script may have created
+      const widget = document.querySelector('[data-help-widget]');
       if (widget) widget.remove();
     };
   }, [isAdmin]);
