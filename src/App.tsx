@@ -6,7 +6,6 @@ import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { HomeButton } from "./components/HomeButton";
 import { RoleProvider } from "./contexts/RoleContext";
-import { HelpWidget } from "./components/HelpWidget";
 import Index from "./pages/Index";
 import Login from "./pages/auth/Login";
 import Register from "./pages/auth/Register";
@@ -87,7 +86,6 @@ const AppContent = () => {
   return (
     <>
       {!hideHomeButton && <HomeButton />}
-      <HelpWidget />
       <Routes>
         <Route path="/" element={<Login />} />
             <Route path="/auth/login" element={<Login />} />
