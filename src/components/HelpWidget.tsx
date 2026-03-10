@@ -2,11 +2,22 @@ import { useEffect } from 'react';
 import { useRoleContext } from '@/contexts/RoleContext';
 
 export const HelpWidget = () => {
-  const { selectedRole } = useRoleContext();
-  const isAdmin = selectedRole === 'admin' || selectedRole === 'god-admin';
+  const { selectedRole, availableRoles } = useRoleContext();
+  const isAdmin =
+    selectedRole === 'admin' ||
+    selectedRole === 'god-admin' ||
+    availableRoles?.isAdmin ||
+    availableRoles?.isGodAdmin;
 
   useEffect(() => {
-    if (!isAdmin) return;
+    if (!isAdmin) {
+      // Clean up if role changes away from admin
+      const el = document.getElementById('help-widget-script');
+      if (el) el.remove();
+      const widget = document.querySelector('[data-help-widget]');
+      if (widget) widget.remove();
+      return;
+    }
 
     const existingScript = document.getElementById('help-widget-script');
     if (existingScript) return;
