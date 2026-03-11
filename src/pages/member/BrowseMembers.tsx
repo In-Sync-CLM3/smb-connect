@@ -202,7 +202,7 @@ export default function BrowseMembers() {
         .select(`
           id, 
           user_id, 
-          company:companies(
+          company:companies!members_company_id_fkey(
             id,
             name,
             association_id,

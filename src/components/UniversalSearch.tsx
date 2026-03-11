@@ -168,11 +168,29 @@ export const UniversalSearch = () => {
 };
 
 async function searchMembers(term: string): Promise<MemberResult[]> {
-  const { data: profiles, error } = await supabase
+  const trimmed = term.trim();
+  if (!trimmed) return [];
+
+  // Split search term into words to support full name search (e.g. "John Smith")
+  const words = trimmed.split(/\s+/).filter(Boolean);
+
+  let query = supabase
     .from('profiles')
-    .select('id, first_name, last_name, avatar')
-    .or(`first_name.ilike.%${term}%,last_name.ilike.%${term}%`)
-    .limit(6);
+    .select('id, first_name, last_name, avatar');
+
+  if (words.length === 1) {
+    query = query.or(`first_name.ilike.%${words[0]}%,last_name.ilike.%${words[0]}%`);
+  } else {
+    // For multi-word search, match first word against first_name AND last word against last_name,
+    // OR the full term against either column
+    const firstWord = words[0];
+    const lastWord = words[words.length - 1];
+    query = query.or(
+      `first_name.ilike.%${firstWord}%,last_name.ilike.%${lastWord}%,first_name.ilike.%${trimmed}%,last_name.ilike.%${trimmed}%`
+    );
+  }
+
+  const { data: profiles, error } = await query.limit(6);
 
   if (error || !profiles) return [];
 
@@ -180,10 +198,10 @@ async function searchMembers(term: string): Promise<MemberResult[]> {
     profiles.map(async (profile) => {
       const { data: memberData } = await supabase
         .from('members')
-        .select('id, company:companies(name)')
+        .select('id, company:companies!members_company_id_fkey(name)')
         .eq('user_id', profile.id)
         .eq('is_active', true)
-        .single();
+        .maybeSingle();
 
       return {
         type: 'member' as const,
@@ -192,7 +210,7 @@ async function searchMembers(term: string): Promise<MemberResult[]> {
         first_name: profile.first_name,
         last_name: profile.last_name,
         avatar: profile.avatar,
-        company_name: memberData?.company?.name || null,
+        company_name: (memberData?.company as any)?.name || null,
       };
     })
   );
