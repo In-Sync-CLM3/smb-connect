@@ -134,8 +134,8 @@ export const UniversalSearch = () => {
                       <Avatar className="h-8 w-8">
                         <AvatarImage src={result.avatar || undefined} />
                         <AvatarFallback>
-                          {result.first_name[0]}
-                          {result.last_name[0]}
+                          {result.first_name?.[0] || ''}
+                          {result.last_name?.[0] || ''}
                         </AvatarFallback>
                       </Avatar>
                       <div className="flex-1 min-w-0">
@@ -171,51 +171,55 @@ async function searchMembers(term: string): Promise<MemberResult[]> {
   const trimmed = term.trim();
   if (!trimmed) return [];
 
-  // Split search term into words to support full name search (e.g. "John Smith")
   const words = trimmed.split(/\s+/).filter(Boolean);
 
-  let query = supabase
+  // Step 1: Search profiles by name
+  let profileQuery = supabase
     .from('profiles')
     .select('id, first_name, last_name, avatar');
 
   if (words.length === 1) {
-    query = query.or(`first_name.ilike.%${words[0]}%,last_name.ilike.%${words[0]}%`);
+    profileQuery = profileQuery.or(`first_name.ilike.%${words[0]}%,last_name.ilike.%${words[0]}%`);
   } else {
-    // For multi-word search, match first word against first_name AND last word against last_name,
-    // OR the full term against either column
+    // Multi-word: match first_name AND last_name together, or full term in either
     const firstWord = words[0];
     const lastWord = words[words.length - 1];
-    query = query.or(
-      `first_name.ilike.%${firstWord}%,last_name.ilike.%${lastWord}%,first_name.ilike.%${trimmed}%,last_name.ilike.%${trimmed}%`
+    profileQuery = profileQuery.or(
+      `and(first_name.ilike.%${firstWord}%,last_name.ilike.%${lastWord}%),first_name.ilike.%${trimmed}%,last_name.ilike.%${trimmed}%`
     );
   }
 
-  const { data: profiles, error } = await query.limit(6);
+  const { data: profiles, error } = await profileQuery.limit(10);
+  if (error || !profiles || profiles.length === 0) return [];
 
-  if (error || !profiles) return [];
+  // Step 2: Fetch active members for matched profiles in a single query
+  const userIds = profiles.map((p) => p.id);
+  const { data: membersData } = await supabase
+    .from('members')
+    .select('id, user_id, company:companies!members_company_id_fkey(name)')
+    .in('user_id', userIds)
+    .eq('is_active', true);
 
-  const results = await Promise.all(
-    profiles.map(async (profile) => {
-      const { data: memberData } = await supabase
-        .from('members')
-        .select('id, company:companies!members_company_id_fkey(name)')
-        .eq('user_id', profile.id)
-        .eq('is_active', true)
-        .maybeSingle();
+  if (!membersData || membersData.length === 0) return [];
 
+  // Step 3: Combine profile + member data, only return active members
+  const memberMap = new Map(membersData.map((m) => [m.user_id, m]));
+
+  return profiles
+    .filter((p) => memberMap.has(p.id))
+    .slice(0, 6)
+    .map((p) => {
+      const member = memberMap.get(p.id)!;
       return {
         type: 'member' as const,
-        id: memberData?.id || profile.id,
-        user_id: profile.id,
-        first_name: profile.first_name,
-        last_name: profile.last_name,
-        avatar: profile.avatar,
-        company_name: (memberData?.company as any)?.name || null,
+        id: member.id,
+        user_id: p.id,
+        first_name: p.first_name || '',
+        last_name: p.last_name || '',
+        avatar: p.avatar,
+        company_name: (member.company as any)?.name || null,
       };
-    })
-  );
-
-  return results.filter((r) => r.id);
+    });
 }
 
 async function searchAssociations(term: string): Promise<AssociationResult[]> {
