@@ -273,7 +273,6 @@ export default function MemberProfile() {
         .from('posts')
         .select('*')
         .eq('user_id', userId)
-        .or('post_context.is.null,post_context.eq.member')
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -1131,6 +1130,11 @@ export default function MemberProfile() {
                       </a>
                     )}
                   </div>
+
+                  {/* Bio Preview */}
+                  {profile.bio && (
+                    <p className="text-sm text-muted-foreground mt-4 line-clamp-3 whitespace-pre-wrap">{profile.bio}</p>
+                  )}
                 </div>
               </div>
             </CardContent>
@@ -1456,7 +1460,7 @@ export default function MemberProfile() {
               <CardContent className="pt-6">
                 <div className="flex items-center justify-between mb-4">
                   <h2 className="text-xl font-semibold">About</h2>
-                  {isOwnProfile && !profile.bio && (
+                  {isOwnProfile && (
                     <div className="relative z-10">
                       <EditProfileDialog profile={profile} onSave={loadProfile} />
                     </div>
