@@ -375,84 +375,109 @@ serve(async (req: Request) => {
     // Add user to the event's association as a member
     if (userId && landingPage.association_id) {
       try {
-        // Check if user already has an active member record in a company under this association
-        const { data: existingMember } = await supabase
-          .from('members')
-          .select('id, company_id, companies!inner(association_id)')
-          .eq('user_id', userId)
+        // Find the default company for this association
+        const { data: defaultCompany } = await supabase
+          .from('companies')
+          .select('id')
+          .eq('association_id', landingPage.association_id)
           .eq('is_active', true)
-          .eq('companies.association_id', landingPage.association_id)
+          .eq('is_default', true)
+          .limit(1)
           .maybeSingle();
 
-        if (!existingMember) {
-          // Find the default company for this association, or the first active company
-          const { data: defaultCompany } = await supabase
+        let companyId = defaultCompany?.id || null;
+
+        if (!companyId) {
+          // Fallback: pick the first active company in the association
+          const { data: firstCompany } = await supabase
             .from('companies')
             .select('id')
             .eq('association_id', landingPage.association_id)
             .eq('is_active', true)
-            .eq('is_default', true)
+            .order('created_at', { ascending: true })
+            .limit(1)
             .maybeSingle();
 
-          let companyId = defaultCompany?.id || null;
+          companyId = firstCompany?.id || null;
+        }
 
-          if (!companyId) {
-            // Fallback: pick the first active company in the association
-            const { data: firstCompany } = await supabase
-              .from('companies')
+        // If no company exists at all, create a default one for this association
+        if (!companyId) {
+          const associationName = (landingPage.associations as any)?.name || 'Association';
+          const { data: newCompany, error: createCompanyError } = await supabase
+            .from('companies')
+            .insert({
+              association_id: landingPage.association_id,
+              name: `${associationName} - General`,
+              email: `general@${associationName.toLowerCase().replace(/[^a-z0-9]/g, '')}.org`,
+              is_default: true,
+              is_active: true,
+              description: 'Default company for association members',
+            })
+            .select('id')
+            .single();
+
+          if (createCompanyError) {
+            console.error('Error creating default company:', createCompanyError);
+          } else {
+            companyId = newCompany.id;
+            console.log('Created default company for association:', companyId);
+          }
+        }
+
+        if (companyId) {
+          // Check if user already has an active member record in this company
+          const { data: existingMember } = await supabase
+            .from('members')
+            .select('id, company_id')
+            .eq('user_id', userId)
+            .eq('company_id', companyId)
+            .eq('is_active', true)
+            .maybeSingle();
+
+          if (!existingMember) {
+            // Also check if user has a member record with null company_id and update it
+            const { data: nullCompanyMember } = await supabase
+              .from('members')
               .select('id')
-              .eq('association_id', landingPage.association_id)
+              .eq('user_id', userId)
+              .is('company_id', null)
               .eq('is_active', true)
-              .order('created_at', { ascending: true })
-              .limit(1)
               .maybeSingle();
 
-            companyId = firstCompany?.id || null;
-          }
+            if (nullCompanyMember) {
+              // Fix existing record by setting company_id
+              const { error: updateError } = await supabase
+                .from('members')
+                .update({ company_id: companyId })
+                .eq('id', nullCompanyMember.id);
 
-          // If no company exists at all, create a default one for this association
-          if (!companyId) {
-            const associationName = (landingPage.associations as any)?.name || 'Association';
-            const { data: newCompany, error: createCompanyError } = await supabase
-              .from('companies')
-              .insert({
-                association_id: landingPage.association_id,
-                name: `${associationName} - General`,
-                email: `general@${associationName.toLowerCase().replace(/[^a-z0-9]/g, '')}.org`,
-                is_default: true,
-                is_active: true,
-                description: 'Default company for association members',
-              })
-              .select('id')
-              .single();
-
-            if (createCompanyError) {
-              console.error('Error creating default company:', createCompanyError);
+              if (updateError) {
+                console.error('Error updating member company_id:', updateError);
+              } else {
+                console.log('Fixed member record with company_id:', companyId);
+              }
             } else {
-              companyId = newCompany.id;
-              console.log('Created default company for association:', companyId);
-            }
-          }
+              // Create new member record
+              const { error: memberError } = await supabase
+                .from('members')
+                .insert({
+                  user_id: userId,
+                  company_id: companyId,
+                  role: 'member',
+                  designation: 'Event Registrant',
+                  is_active: true,
+                });
 
-          if (companyId) {
-            const { error: memberError } = await supabase
-              .from('members')
-              .insert({
-                user_id: userId,
-                company_id: companyId,
-                role: 'member',
-                designation: 'Event Registrant',
-                is_active: true,
-              });
-
-            if (memberError) {
-              console.error('Error adding user to association company:', memberError);
-            } else {
-              console.log('User added to association company:', companyId);
+              if (memberError) {
+                console.error('Error adding user to association company:', memberError);
+              } else {
+                console.log('User added to association company:', companyId);
+              }
             }
+          } else {
+            console.log('User already a member of company:', companyId);
           }
-        } else {
-          console.log('User already a member of a company in this association');
         }
       } catch (memberLinkError) {
         console.error('Error linking user to association:', memberLinkError);
