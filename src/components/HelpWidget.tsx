@@ -24,8 +24,8 @@ export const HelpWidget = () => {
 
     const script = document.createElement('script');
     script.id = 'help-widget-script';
-    script.src = 'https://go.in-sync.co.in/help-widget.js';
-    script.setAttribute('data-source', 'paisaa_saarthi');
+    script.src = 'https://in-sync-crm.com/ticket-widget.js';
+    script.setAttribute('data-source', 'smb-connect');
     document.body.appendChild(script);
 
     return () => {
