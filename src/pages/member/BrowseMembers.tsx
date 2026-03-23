@@ -67,6 +67,7 @@ export default function BrowseMembers() {
   const [connectionMessage, setConnectionMessage] = useState('');
   const [sendingRequest, setSendingRequest] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
+  const [currentMemberId, setCurrentMemberId] = useState<string | null>(null);
   
   // Filter states
   const [associations, setAssociations] = useState<Association[]>([]);
@@ -189,19 +190,36 @@ export default function BrowseMembers() {
   const loadMembers = async () => {
     try {
       setLoading(true);
-      if (!userData?.id) {
-        console.log('No userData.id found, userData:', userData);
+
+      // Get current auth user
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        console.log('No authenticated user found');
         return;
       }
 
-      console.log('Loading members, current userData.id:', userData.id);
+      // Look up the current user's member record by auth user_id
+      const { data: currentMember } = await supabase
+        .from('members')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('is_active', true)
+        .maybeSingle();
+
+      if (!currentMember) {
+        console.log('No member record found for current user');
+        return;
+      }
+
+      setCurrentMemberId(currentMember.id);
+      console.log('Loading members, current member id:', currentMember.id);
 
       // Load all members except current user with company and association details
       const { data: membersData, error: membersError } = await supabase
         .from('members')
         .select(`
-          id, 
-          user_id, 
+          id,
+          user_id,
           company:companies!members_company_id_fkey(
             id,
             name,
@@ -214,7 +232,7 @@ export default function BrowseMembers() {
             association:associations(id, name)
           )
         `)
-        .neq('id', userData.id)
+        .neq('id', currentMember.id)
         .eq('is_active', true);
 
       console.log('Members query result:', { membersData, membersError, count: membersData?.length });
@@ -241,7 +259,7 @@ export default function BrowseMembers() {
       const { data: connectionsData, error: connectionsError } = await supabase
         .from('connections')
         .select('sender_id, receiver_id, status')
-        .or(`sender_id.eq.${userData.id},receiver_id.eq.${userData.id}`);
+        .or(`sender_id.eq.${currentMember.id},receiver_id.eq.${currentMember.id}`);
 
       if (connectionsError) throw connectionsError;
 
@@ -255,7 +273,7 @@ export default function BrowseMembers() {
         if (connection) {
           if (connection.status === 'accepted') {
             connectionStatus = 'connected';
-          } else if (connection.sender_id === userData.id) {
+          } else if (connection.sender_id === currentMember.id) {
             connectionStatus = 'pending_sent';
           } else {
             connectionStatus = 'pending_received';
@@ -282,14 +300,14 @@ export default function BrowseMembers() {
   };
 
   const handleSendRequest = async () => {
-    if (!selectedMember || !userData?.id) return;
+    if (!selectedMember || !currentMemberId) return;
 
     try {
       setSendingRequest(true);
       const { error } = await supabase
         .from('connections')
         .insert({
-          sender_id: userData.id,
+          sender_id: currentMemberId,
           receiver_id: selectedMember.id,
           message: connectionMessage || null,
           status: 'pending',
