@@ -967,15 +967,9 @@ export default function MemberProfile() {
       {/* Header */}
       <header className="border-b bg-card sticky top-0 z-10">
         <div className="container mx-auto py-3 md:py-4 md:pl-20">
-          <Button variant="ghost" size="sm" onClick={() => {
-            if (window.history.state && window.history.state.idx > 0) {
-              navigate(-1);
-            } else {
-              navigate('/dashboard');
-            }
-          }}>
+          <Button variant="ghost" size="sm" onClick={() => navigate(-1)}>
             <ArrowLeft className="w-4 h-4 mr-2" />
-            <span className="hidden sm:inline">Back to Dashboard</span>
+            <span className="hidden sm:inline">Back</span>
             <span className="sm:hidden">Back</span>
           </Button>
         </div>
