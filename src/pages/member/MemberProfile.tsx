@@ -827,9 +827,10 @@ export default function MemberProfile() {
 
       await checkConnectionStatus();
     } catch (error: any) {
+      console.error('Connection request error:', error);
       toast({
         title: 'Error',
-        description: 'Failed to send connection request',
+        description: error?.message || 'Failed to send connection request',
         variant: 'destructive',
       });
     }
