@@ -411,20 +411,22 @@ export default function MemberProfile() {
 
   const checkConnectionStatus = async () => {
     try {
-      // Get both members with company_id
-      const { data: currentMember } = await supabase
+      // Get both members with company_id (use limit(1) to handle duplicate member records)
+      const { data: currentMembers } = await supabase
         .from('members')
         .select('id, company_id')
         .eq('user_id', currentUser)
         .eq('is_active', true)
-        .maybeSingle();
+        .limit(1);
+      const currentMember = currentMembers?.[0] || null;
 
-      const { data: otherMember } = await supabase
+      const { data: otherMembers } = await supabase
         .from('members')
         .select('id, company_id')
         .eq('user_id', userId)
         .eq('is_active', true)
-        .maybeSingle();
+        .limit(1);
+      const otherMember = otherMembers?.[0] || null;
 
       if (!currentMember || !otherMember) return;
 
@@ -435,11 +437,11 @@ export default function MemberProfile() {
         .or(`and(sender_id.eq.${currentMember.id},receiver_id.eq.${otherMember.id}),and(sender_id.eq.${otherMember.id},receiver_id.eq.${currentMember.id})`)
         .maybeSingle();
 
-      if (connection) {
+      if (connection && (connection.status === 'accepted' || connection.status === 'pending')) {
         setConnectionId(connection.id);
         // Check if current user is the receiver
         setIsReceiver(connection.receiver_id === currentMember.id);
-        
+
         if (connection.status === 'accepted') {
           setConnectionStatus('connected');
           // Find existing chat using member.id
@@ -494,20 +496,22 @@ export default function MemberProfile() {
         return;
       }
 
-      // Create new chat
-      const { data: currentMember } = await supabase
+      // Create new chat (use limit(1) to handle duplicate member records)
+      const { data: currentMembers } = await supabase
         .from('members')
         .select('id')
         .eq('user_id', currentUser)
         .eq('is_active', true)
-        .maybeSingle();
+        .limit(1);
+      const currentMember = currentMembers?.[0] || null;
 
-      const { data: otherMember } = await supabase
+      const { data: otherMembers } = await supabase
         .from('members')
         .select('id')
         .eq('user_id', userId)
         .eq('is_active', true)
-        .maybeSingle();
+        .limit(1);
+      const otherMember = otherMembers?.[0] || null;
 
       if (!currentMember || !otherMember) {
         toast({
@@ -631,13 +635,14 @@ export default function MemberProfile() {
         setAssociations(associationsData || []);
       }
 
-      // Load connection count
-      const { data: userMember } = await supabase
+      // Load connection count (use limit(1) to handle duplicate member records)
+      const { data: userMembers } = await supabase
         .from('members')
         .select('id')
         .eq('user_id', userId)
         .eq('is_active', true)
-        .maybeSingle();
+        .limit(1);
+      const userMember = userMembers?.[0] || null;
 
       if (userMember) {
         const { count } = await supabase
@@ -773,18 +778,22 @@ export default function MemberProfile() {
 
   const handleSendConnection = async () => {
     try {
-      // Get both members
-      const { data: currentMember } = await supabase
+      // Get both members (use limit(1) to handle duplicate member records)
+      const { data: currentMembers } = await supabase
         .from('members')
         .select('id')
         .eq('user_id', currentUser)
-        .maybeSingle();
+        .eq('is_active', true)
+        .limit(1);
+      const currentMember = currentMembers?.[0] || null;
 
-      const { data: otherMember } = await supabase
+      const { data: otherMembers } = await supabase
         .from('members')
         .select('id')
         .eq('user_id', userId)
-        .maybeSingle();
+        .eq('is_active', true)
+        .limit(1);
+      const otherMember = otherMembers?.[0] || null;
 
       if (!currentMember || !otherMember) {
         toast({
@@ -794,6 +803,14 @@ export default function MemberProfile() {
         });
         return;
       }
+
+      // Remove any previously rejected connection before re-sending
+      await supabase
+        .from('connections')
+        .delete()
+        .eq('sender_id', currentMember.id)
+        .eq('receiver_id', otherMember.id)
+        .eq('status', 'rejected');
 
       const { error } = await supabase.from('connections').insert({
         sender_id: currentMember.id,
@@ -950,7 +967,13 @@ export default function MemberProfile() {
       {/* Header */}
       <header className="border-b bg-card sticky top-0 z-10">
         <div className="container mx-auto py-3 md:py-4 md:pl-20">
-          <Button variant="ghost" size="sm" onClick={() => navigate('/dashboard')}>
+          <Button variant="ghost" size="sm" onClick={() => {
+            if (window.history.state && window.history.state.idx > 0) {
+              navigate(-1);
+            } else {
+              navigate('/dashboard');
+            }
+          }}>
             <ArrowLeft className="w-4 h-4 mr-2" />
             <span className="hidden sm:inline">Back to Dashboard</span>
             <span className="sm:hidden">Back</span>
