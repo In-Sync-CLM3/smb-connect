@@ -198,24 +198,22 @@ export default function BrowseMembers() {
         return;
       }
 
-      // Look up the current user's member record by auth user_id
-      const { data: currentMember } = await supabase
+      // Look up the current user's member record by auth user_id (use limit(1) to handle duplicate member records)
+      const { data: currentMembers } = await supabase
         .from('members')
         .select('id')
         .eq('user_id', user.id)
         .eq('is_active', true)
-        .maybeSingle();
+        .limit(1);
+      const currentMember = currentMembers?.[0] || null;
 
-      if (!currentMember) {
-        console.log('No member record found for current user');
-        return;
+      if (currentMember) {
+        setCurrentMemberId(currentMember.id);
       }
+      console.log('Loading members, current member id:', currentMember?.id || 'none (non-member user)');
 
-      setCurrentMemberId(currentMember.id);
-      console.log('Loading members, current member id:', currentMember.id);
-
-      // Load all members except current user with company and association details
-      const { data: membersData, error: membersError } = await supabase
+      // Load all members (exclude current user if they have a member record) with company and association details
+      let membersQuery = supabase
         .from('members')
         .select(`
           id,
@@ -232,8 +230,13 @@ export default function BrowseMembers() {
             association:associations(id, name)
           )
         `)
-        .neq('id', currentMember.id)
         .eq('is_active', true);
+
+      if (currentMember) {
+        membersQuery = membersQuery.neq('id', currentMember.id);
+      }
+
+      const { data: membersData, error: membersError } = await membersQuery;
 
       console.log('Members query result:', { membersData, membersError, count: membersData?.length });
 
@@ -255,36 +258,44 @@ export default function BrowseMembers() {
         })
       );
 
-      // Load existing connections
-      const { data: connectionsData, error: connectionsError } = await supabase
-        .from('connections')
-        .select('sender_id, receiver_id, status')
-        .or(`sender_id.eq.${currentMember.id},receiver_id.eq.${currentMember.id}`);
+      // Load existing connections and map status (only if current user has a member record)
+      let membersWithStatus: typeof membersWithProfiles & { connectionStatus: Member['connectionStatus'] }[];
+      if (currentMember) {
+        const { data: connectionsData, error: connectionsError } = await supabase
+          .from('connections')
+          .select('sender_id, receiver_id, status')
+          .or(`sender_id.eq.${currentMember.id},receiver_id.eq.${currentMember.id}`);
 
-      if (connectionsError) throw connectionsError;
+        if (connectionsError) throw connectionsError;
 
-      // Map connection status to each member
-      const membersWithStatus = membersWithProfiles.map(member => {
-        const connection = connectionsData?.find(
-          c => c.sender_id === member.id || c.receiver_id === member.id
-        );
+        membersWithStatus = membersWithProfiles.map(member => {
+          const connection = connectionsData?.find(
+            c => c.sender_id === member.id || c.receiver_id === member.id
+          );
 
-        let connectionStatus: Member['connectionStatus'] = 'none';
-        if (connection) {
-          if (connection.status === 'accepted') {
-            connectionStatus = 'connected';
-          } else if (connection.sender_id === currentMember.id) {
-            connectionStatus = 'pending_sent';
-          } else {
-            connectionStatus = 'pending_received';
+          let connectionStatus: Member['connectionStatus'] = 'none';
+          if (connection && (connection.status === 'accepted' || connection.status === 'pending')) {
+            if (connection.status === 'accepted') {
+              connectionStatus = 'connected';
+            } else if (connection.sender_id === currentMember.id) {
+              connectionStatus = 'pending_sent';
+            } else {
+              connectionStatus = 'pending_received';
+            }
           }
-        }
 
-        return { ...member, connectionStatus };
-      });
+          return { ...member, connectionStatus };
+        });
+      } else {
+        // Non-member users (e.g. super admins) can browse but have no connection status
+        membersWithStatus = membersWithProfiles.map(member => ({
+          ...member,
+          connectionStatus: 'none' as Member['connectionStatus'],
+        }));
+      }
 
       console.log('Final members with status:', { count: membersWithStatus.length, sample: membersWithStatus[0] });
-      
+
       setMembers(membersWithStatus);
       setFilteredMembers(membersWithStatus);
     } catch (error: any) {
@@ -304,6 +315,15 @@ export default function BrowseMembers() {
 
     try {
       setSendingRequest(true);
+
+      // Remove any previously rejected connection before re-sending
+      await supabase
+        .from('connections')
+        .delete()
+        .eq('sender_id', currentMemberId)
+        .eq('receiver_id', selectedMember.id)
+        .eq('status', 'rejected');
+
       const { error } = await supabase
         .from('connections')
         .insert({
