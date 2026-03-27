@@ -35,7 +35,7 @@ export const RoleSelectionDialog = ({
     if (availableRoles.isAdmin) {
       types.push({
         value: 'admin' as const,
-        label: availableRoles.isGodAdmin ? 'God Admin' : availableRoles.isSuperAdmin ? 'Super Admin' : 'Platform Admin',
+        label: availableRoles.isPlatformAdmin ? 'Platform Admin' : availableRoles.isSuperAdmin ? 'Super Admin' : 'Platform Admin',
         icon: Shield,
       });
     }
@@ -97,7 +97,7 @@ export const RoleSelectionDialog = ({
     let companyId: string | undefined;
     
     if (selectedRoleType === 'admin') {
-      role = availableRoles.isGodAdmin ? 'god-admin' : 'admin';
+      role = availableRoles.isPlatformAdmin ? 'platform-admin' : 'admin';
     } else if (selectedRoleType === 'association') {
       role = 'association';
       associationId = selectedEntityId;

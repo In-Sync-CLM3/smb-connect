@@ -22,7 +22,7 @@ export function useAvailableRoles() {
       const roles: AvailableRoles = {
         isAdmin: false,
         isSuperAdmin: false,
-        isGodAdmin: false,
+        isPlatformAdmin: false,
         associations: [],
         companies: [],
         isMember: false,
@@ -39,7 +39,7 @@ export function useAvailableRoles() {
       if (adminData) {
         roles.isAdmin = true;
         roles.isSuperAdmin = adminData.is_super_admin || false;
-        roles.isGodAdmin = adminData.is_super_admin && (adminData as any).is_hidden === true;
+        roles.isPlatformAdmin = adminData.is_super_admin && (adminData as any).is_hidden === true;
       }
 
       // Check association manager roles
@@ -107,18 +107,18 @@ export function useAvailableRoles() {
       }
 
       // Check member status - all users with a member record can access member features
-      const { data: memberData, error: memberError } = await supabase
+      const { data: memberDataArr, error: memberError } = await supabase
         .from('members')
         .select('id')
         .eq('user_id', user.id)
         .eq('is_active', true)
-        .maybeSingle();
+        .limit(1);
 
       if (memberError) {
         console.error('Error checking member status:', memberError);
       }
-      
-      roles.isMember = !!memberData;
+
+      roles.isMember = !!(memberDataArr && memberDataArr.length > 0);
       
       // If user is an admin but also has a member record, ensure isMember is true
       // This ensures admins can still access member features

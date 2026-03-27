@@ -51,7 +51,7 @@ export default function MemberInvitations() {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
   useEffect(() => {
-    if (user && role && (role === 'admin' || role === 'god-admin' || 
+    if (user && role && (role === 'admin' || role === 'platform-admin' || 
         (role === 'association' && userData?.association_id) || 
         (role === 'company' && userData?.company_id))) {
       loadInvitations();

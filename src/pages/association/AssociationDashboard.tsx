@@ -73,7 +73,7 @@ export default function AssociationDashboard() {
           console.error('Error fetching association:', err);
           setLoading(false);
         }
-      } else if (userData?.type === 'god-admin' || userData?.type === 'admin') {
+      } else if (userData?.type === 'platform-admin' || userData?.type === 'admin') {
         // Admin user without association context - use selectedAssociationId or fetch first
         console.log('Admin user accessing association dashboard, selectedAssociationId:', selectedAssociationId);
         try {

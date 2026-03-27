@@ -64,7 +64,7 @@ export function CreateEmailListDialog({
         insertData.association_id = userData.association_id;
       } else if (role === 'company' && userData?.company_id) {
         insertData.company_id = userData.company_id;
-      } else if (role === 'admin' || role === 'god-admin') {
+      } else if (role === 'admin' || role === 'platform-admin') {
         // Priority 1: Use selectedAssociationId from RoleContext (set by dashboard)
         if (selectedAssociationId) {
           insertData.association_id = selectedAssociationId;

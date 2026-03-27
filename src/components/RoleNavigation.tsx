@@ -44,7 +44,7 @@ export function RoleNavigation() {
   }
 
   // Add Admin Dashboard if user is admin
-  if (availableRoles.isAdmin || availableRoles.isSuperAdmin || availableRoles.isGodAdmin) {
+  if (availableRoles.isAdmin || availableRoles.isSuperAdmin || availableRoles.isPlatformAdmin) {
     navigationOptions.push({
       label: 'Admin Dashboard',
       icon: Shield,

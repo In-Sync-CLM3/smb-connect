@@ -30,7 +30,7 @@ export default function SelectRole() {
       } else if (totalRoles === 1) {
         // Only one role - auto-select and navigate
         if (availableRoles.isAdmin) {
-          const role = availableRoles.isGodAdmin ? 'god-admin' : 'admin';
+          const role = availableRoles.isPlatformAdmin ? 'platform-admin' : 'admin';
           setRole(role);
           navigate('/admin');
         } else if (availableRoles.associations.length > 0) {
@@ -56,7 +56,7 @@ export default function SelectRole() {
     // Navigate to appropriate dashboard
     switch (role) {
       case 'admin':
-      case 'god-admin':
+      case 'platform-admin':
         navigate('/admin');
         break;
       case 'association':

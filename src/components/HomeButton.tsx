@@ -14,7 +14,7 @@ export const HomeButton = () => {
   const getHomePath = () => {
     switch(activeRole) {
       case 'admin':
-      case 'god-admin':
+      case 'platform-admin':
         return '/admin';
       case 'association':
         return '/association';
@@ -43,7 +43,7 @@ export const HomeButton = () => {
           </button>
         </TooltipTrigger>
         <TooltipContent side="right">
-          <p>Go to {activeRole === 'admin' || activeRole === 'god-admin' ? 'Admin Dashboard' : activeRole === 'association' ? 'Association Dashboard' : activeRole === 'company' ? 'Company Dashboard' : activeRole === 'member' ? 'Feed' : 'Dashboard'}</p>
+          <p>Go to {activeRole === 'admin' || activeRole === 'platform-admin' ? 'Admin Dashboard' : activeRole === 'association' ? 'Association Dashboard' : activeRole === 'company' ? 'Company Dashboard' : activeRole === 'member' ? 'Feed' : 'Dashboard'}</p>
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>

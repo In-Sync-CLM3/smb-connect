@@ -2,7 +2,7 @@ import { supabase } from '@/integrations/supabase/client';
 
 /**
  * Utility to fetch hidden admin user IDs for filtering
- * Used to exclude god-level admins from public listings
+ * Used to exclude platform admins from public listings
  */
 export async function getHiddenAdminIds(): Promise<string[]> {
   const { data, error } = await supabase
@@ -20,7 +20,7 @@ export async function getHiddenAdminIds(): Promise<string[]> {
 }
 
 /**
- * Check if the current user is a hidden (god-level) admin
+ * Check if the current user is a hidden (platform) admin
  */
 export async function isCurrentUserHiddenAdmin(): Promise<boolean> {
   const { data: { user } } = await supabase.auth.getUser();

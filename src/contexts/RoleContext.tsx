@@ -4,7 +4,7 @@ import { UserRole } from '@/hooks/useUserRole';
 export interface AvailableRoles {
   isAdmin: boolean;
   isSuperAdmin: boolean;
-  isGodAdmin: boolean;
+  isPlatformAdmin: boolean;
   associations: { id: string; name: string }[];
   companies: { id: string; name: string; role: 'owner' | 'admin' }[];
   isMember: boolean;

@@ -50,8 +50,8 @@ export default function AssociationInvitations() {
     const initializeAssociation = async () => {
       if (userLoading) return;
 
-      // For god-admin or admin users without association context, get first association
-      if ((userData?.type === 'god-admin' || userData?.type === 'admin') && !userData?.association?.id) {
+      // For platform-admin or admin users without association context, get first association
+      if ((userData?.type === 'platform-admin' || userData?.type === 'admin') && !userData?.association?.id) {
         try {
           const { data: associations, error } = await supabase
             .from('associations')

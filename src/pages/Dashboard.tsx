@@ -53,7 +53,7 @@ export default function Dashboard() {
   // Route to appropriate dashboard based on role
     switch (role) {
       case 'admin':
-      case 'god-admin':
+      case 'platform-admin':
         return (
           <>
             <AdminOnboarding />

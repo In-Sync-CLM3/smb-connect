@@ -5,9 +5,9 @@ export const HelpWidget = () => {
   const { selectedRole, availableRoles } = useRoleContext();
   const isAdmin =
     selectedRole === 'admin' ||
-    selectedRole === 'god-admin' ||
+    selectedRole === 'platform-admin' ||
     availableRoles?.isAdmin ||
-    availableRoles?.isGodAdmin;
+    availableRoles?.isPlatformAdmin;
 
   useEffect(() => {
     if (!isAdmin) {

@@ -29,8 +29,8 @@ export const RoleSwitcher = () => {
     if (!selectedRole) return 'Select Role';
     
     switch (selectedRole) {
-      case 'god-admin':
-        return 'God Admin';
+      case 'platform-admin':
+        return 'Platform Admin';
       case 'admin':
         return availableRoles.isSuperAdmin ? 'Super Admin' : 'Admin';
       case 'association':
@@ -46,7 +46,7 @@ export const RoleSwitcher = () => {
 
   const getRoleIcon = () => {
     switch (selectedRole) {
-      case 'god-admin':
+      case 'platform-admin':
       case 'admin':
         return Shield;
       case 'association':
@@ -66,7 +66,7 @@ export const RoleSwitcher = () => {
     // Navigate to appropriate dashboard
     switch (role) {
       case 'admin':
-      case 'god-admin':
+      case 'platform-admin':
         navigate('/admin');
         break;
       case 'association':

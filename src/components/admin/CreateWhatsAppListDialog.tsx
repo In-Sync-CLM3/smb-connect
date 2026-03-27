@@ -55,7 +55,7 @@ const CreateWhatsAppListDialog = ({
         insertData.association_id = userData.association_id;
       } else if (role === 'company' && userData?.company_id) {
         insertData.company_id = userData.company_id;
-      } else if (role === 'admin' || role === 'god-admin') {
+      } else if (role === 'admin' || role === 'platform-admin') {
         if (selectedAssociationId) {
           insertData.association_id = selectedAssociationId;
         } else if (selectedCompanyId) {

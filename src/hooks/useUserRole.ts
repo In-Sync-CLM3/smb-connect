@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useRoleContext } from '@/contexts/RoleContext';
 
-export type UserRole = 'admin' | 'god-admin' | 'association' | 'company' | 'member' | null;
+export type UserRole = 'admin' | 'platform-admin' | 'association' | 'company' | 'member' | null;
 
 export function useUserRole() {
   const { selectedRole, selectedAssociationId, selectedCompanyId } = useRoleContext();
@@ -10,7 +10,7 @@ export function useUserRole() {
   const [loading, setLoading] = useState(true);
   const [userData, setUserData] = useState<any>(null);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
-  const [isGodAdmin, setIsGodAdmin] = useState(false);
+  const [isPlatformAdmin, setIsPlatformAdmin] = useState(false);
 
   useEffect(() => {
     loadUserRole();
@@ -28,7 +28,7 @@ export function useUserRole() {
       // If a role is already selected from context, use that role
       if (selectedRole) {
         // Load the appropriate userData based on selected role
-        if (selectedRole === 'admin' || selectedRole === 'god-admin') {
+        if (selectedRole === 'admin' || selectedRole === 'platform-admin') {
           const { data: adminData } = await supabase
             .from('admin_users')
             .select('*')
@@ -41,7 +41,7 @@ export function useUserRole() {
             setRole(selectedRole);
             setUserData({ ...adminData, type: selectedRole });
             setIsSuperAdmin(adminData.is_super_admin || false);
-            setIsGodAdmin(isGod);
+            setIsPlatformAdmin(isGod);
           }
         } else if (selectedRole === 'association') {
           // Query without filtering by association_id - let RLS determine access
@@ -86,7 +86,7 @@ export function useUserRole() {
                   association: assocData,
                 });
                 setIsSuperAdmin(adminData.is_super_admin || false);
-                setIsGodAdmin(adminData.is_super_admin && (adminData as any).is_hidden === true);
+                setIsPlatformAdmin(adminData.is_super_admin && (adminData as any).is_hidden === true);
               }
             }
           }
@@ -138,10 +138,10 @@ export function useUserRole() {
 
       if (adminData) {
         const isGod = adminData.is_super_admin && (adminData as any).is_hidden === true;
-        setRole(isGod ? 'god-admin' : 'admin');
-        setUserData({ ...adminData, type: isGod ? 'god-admin' : 'admin' });
+        setRole(isGod ? 'platform-admin' : 'admin');
+        setUserData({ ...adminData, type: isGod ? 'platform-admin' : 'admin' });
         setIsSuperAdmin(adminData.is_super_admin || false);
-        setIsGodAdmin(isGod);
+        setIsPlatformAdmin(isGod);
         setLoading(false);
         return;
       }
@@ -200,5 +200,5 @@ export function useUserRole() {
     }
   };
 
-  return { role, loading, userData, refreshRole: loadUserRole, isSuperAdmin, isGodAdmin };
+  return { role, loading, userData, refreshRole: loadUserRole, isSuperAdmin, isPlatformAdmin };
 }
