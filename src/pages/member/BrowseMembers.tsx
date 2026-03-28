@@ -242,21 +242,22 @@ export default function BrowseMembers() {
 
       if (membersError) throw membersError;
 
-      // Load profiles for all members
-      const membersWithProfiles = await Promise.all(
-        (membersData || []).map(async (member) => {
-          const { data: profileData } = await supabase
-            .from('profiles')
-            .select('first_name, last_name, avatar, bio')
-            .eq('id', member.user_id)
-            .single();
+      // Batch fetch all profiles in a single query
+      const userIds = (membersData || []).map(m => m.user_id);
+      const { data: profilesData } = await supabase
+        .from('profiles')
+        .select('id, first_name, last_name, avatar, bio')
+        .in('id', userIds);
 
-          return {
-            ...member,
-            profile: profileData || { first_name: '', last_name: '', avatar: null, bio: null }
-          };
-        })
-      );
+      const profilesById = (profilesData || []).reduce((acc: Record<string, any>, p: any) => {
+        acc[p.id] = p;
+        return acc;
+      }, {} as Record<string, any>);
+
+      const membersWithProfiles = (membersData || []).map(member => ({
+        ...member,
+        profile: profilesById[member.user_id] || { first_name: '', last_name: '', avatar: null, bio: null },
+      }));
 
       // Load existing connections and map status (only if current user has a member record)
       let membersWithStatus: typeof membersWithProfiles & { connectionStatus: Member['connectionStatus'] }[];
