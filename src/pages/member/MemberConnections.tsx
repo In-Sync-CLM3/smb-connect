@@ -55,12 +55,13 @@ export default function MemberConnections() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      const { data: memberData } = await supabase
+      const { data: memberDataArr } = await supabase
         .from('members')
         .select('id')
         .eq('user_id', user.id)
         .eq('is_active', true)
-        .maybeSingle();
+        .limit(1);
+      const memberData = memberDataArr?.[0] || null;
 
       if (memberData) {
         setCurrentMemberId(memberData.id);
@@ -90,48 +91,50 @@ export default function MemberConnections() {
 
       if (connectionsError) throw connectionsError;
 
-      // Then get member and profile details for each connection
-      const connectionsWithDetails = await Promise.all(
-        (connectionsData || []).map(async (conn) => {
-          const [senderData, receiverData] = await Promise.all([
-            supabase
-              .from('members')
-              .select('id, user_id, company:companies(name)')
-              .eq('id', conn.sender_id)
-              .single(),
-            supabase
-              .from('members')
-              .select('id, user_id, company:companies(name)')
-              .eq('id', conn.receiver_id)
-              .single()
-          ]);
+      // Batch fetch all member IDs involved in connections
+      const allMemberIds = Array.from(new Set(
+        (connectionsData || []).flatMap(conn => [conn.sender_id, conn.receiver_id])
+      ));
 
-          const [senderProfile, receiverProfile] = await Promise.all([
-            supabase
-              .from('profiles')
-              .select('first_name, last_name, avatar')
-              .eq('id', senderData.data?.user_id)
-              .single(),
-            supabase
-              .from('profiles')
-              .select('first_name, last_name, avatar')
-              .eq('id', receiverData.data?.user_id)
-              .single()
-          ]);
+      const { data: allMembers } = await supabase
+        .from('members')
+        .select('id, user_id, company:companies(name)')
+        .in('id', allMemberIds);
 
-          return {
-            ...conn,
-            sender: {
-              ...senderData.data,
-              profile: senderProfile.data
-            },
-            receiver: {
-              ...receiverData.data,
-              profile: receiverProfile.data
-            }
-          };
-        })
-      );
+      const membersById = (allMembers || []).reduce((acc: Record<string, any>, m: any) => {
+        acc[m.id] = m;
+        return acc;
+      }, {} as Record<string, any>);
+
+      // Batch fetch all profiles for these members
+      const allUserIds = Array.from(new Set((allMembers || []).map(m => m.user_id)));
+
+      const { data: allProfiles } = await supabase
+        .from('profiles')
+        .select('id, first_name, last_name, avatar')
+        .in('id', allUserIds);
+
+      const profilesByUserId = (allProfiles || []).reduce((acc: Record<string, any>, p: any) => {
+        acc[p.id] = p;
+        return acc;
+      }, {} as Record<string, any>);
+
+      // Assemble connections with details (no per-connection queries)
+      const connectionsWithDetails = (connectionsData || []).map(conn => {
+        const senderMember = membersById[conn.sender_id];
+        const receiverMember = membersById[conn.receiver_id];
+        return {
+          ...conn,
+          sender: {
+            ...senderMember,
+            profile: senderMember ? profilesByUserId[senderMember.user_id] : null,
+          },
+          receiver: {
+            ...receiverMember,
+            profile: receiverMember ? profilesByUserId[receiverMember.user_id] : null,
+          },
+        };
+      });
 
       const allConnections = connectionsWithDetails as ConnectionWithDetails[];
       

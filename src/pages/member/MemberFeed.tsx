@@ -183,12 +183,14 @@ export default function MemberFeed() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      // Get the current user's member ID
-      const { data: memberData } = await supabase
+      // Get the current user's member ID (use limit(1) to handle duplicate member records)
+      const { data: memberDataArr } = await supabase
         .from('members')
         .select('id')
         .eq('user_id', user.id)
-        .maybeSingle();
+        .eq('is_active', true)
+        .limit(1);
+      const memberData = memberDataArr?.[0] || null;
 
       if (!memberData) return;
 
@@ -319,51 +321,47 @@ export default function MemberFeed() {
         }, {} as Record<string, Association>);
       }
 
-      // Load profile and member data for each post
-      const postsWithProfiles = await Promise.all(
-        postsData.map(async (post) => {
-          const profileData = profilesById[post.user_id] || { first_name: '', last_name: '', avatar: null, headline: null };
+      // Batch fetch member data for all post authors
+      const { data: membersData } = await supabase
+        .from('members')
+        .select('user_id, company:companies(name)')
+        .in('user_id', userIds)
+        .eq('is_active', true);
 
-          const { data: memberData } = await supabase
-            .from('members')
-            .select('company:companies(name)')
-            .eq('user_id', post.user_id)
-            .maybeSingle();
+      const membersByUserId = (membersData || []).reduce((acc: Record<string, any>, m: any) => {
+        if (!acc[m.user_id]) acc[m.user_id] = m;
+        return acc;
+      }, {} as Record<string, any>);
 
-          return {
-            ...post,
-            profile: profileData,
-            original_author: post.original_author_id ? profilesById[post.original_author_id] : null,
-            member: memberData,
-            association: post.post_context === 'association' && post.organization_id 
-              ? associationsById[post.organization_id] || null 
-              : null,
-          };
-        })
-      );
-
-      // Check if user liked each post
+      // Batch fetch likes
+      let likedPostIds = new Set<string>();
       if (user) {
+        const postIds = postsData.map(p => p.id);
         const { data: likesData } = await supabase
           .from('post_likes')
           .select('post_id')
-          .eq('user_id', user.id);
+          .eq('user_id', user.id)
+          .in('post_id', postIds);
 
-        const likedPostIds = new Set(likesData?.map(l => l.post_id) || []);
-
-        const postsWithLikeStatus = postsWithProfiles.map(post => ({
-          ...post,
-          user_liked: likedPostIds.has(post.id)
-        }));
-
-        setPosts(postsWithLikeStatus);
-      } else {
-        const postsWithDefaults = postsWithProfiles.map(post => ({
-          ...post,
-          user_liked: false
-        }));
-        setPosts(postsWithDefaults);
+        likedPostIds = new Set(likesData?.map(l => l.post_id) || []);
       }
+
+      // Assemble posts with all data (no per-post queries)
+      const postsWithProfiles = postsData.map(post => {
+        const profileData = profilesById[post.user_id] || { first_name: '', last_name: '', avatar: null, headline: null };
+        return {
+          ...post,
+          profile: profileData,
+          original_author: post.original_author_id ? profilesById[post.original_author_id] : null,
+          member: membersByUserId[post.user_id] || null,
+          association: post.post_context === 'association' && post.organization_id
+            ? associationsById[post.organization_id] || null
+            : null,
+          user_liked: likedPostIds.has(post.id),
+        };
+      });
+
+      setPosts(postsWithProfiles);
     } catch (error: any) {
       toast({
         title: 'Error',

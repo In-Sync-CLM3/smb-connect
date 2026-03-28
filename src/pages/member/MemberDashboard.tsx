@@ -36,12 +36,14 @@ export default function MemberDashboard() {
         setProfile(profileData);
       }
 
-      // Load member data to check company affiliation
-      const { data: memberData } = await supabase
+      // Load member data to check company affiliation (use limit(1) to handle duplicate member records)
+      const { data: memberDataArr } = await supabase
         .from('members')
         .select('*, company:companies(*)')
         .eq('user_id', user.id)
-        .maybeSingle();
+        .eq('is_active', true)
+        .limit(1);
+      const memberData = memberDataArr?.[0] || null;
 
       if (memberData?.company) {
         // Member has a company

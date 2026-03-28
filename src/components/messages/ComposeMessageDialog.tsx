@@ -46,38 +46,29 @@ export function ComposeMessageDialog({
       setLoading(true);
       
       // Get current member record
-      const { data: currentMember } = await supabase
+      const { data: currentMemberRows } = await supabase
         .from('members')
         .select('id')
         .eq('user_id', currentUserId)
-        .single();
+        .eq('is_active', true)
+        .limit(1);
 
+      const currentMember = currentMemberRows?.[0] || null;
       if (!currentMember) return;
 
-      // Get all members except current user
+      // Get all members with profiles in a single query using join
       const { data: membersData } = await supabase
         .from('members')
-        .select('id, user_id')
+        .select('id, user_id, profiles!inner(first_name, last_name, avatar)')
         .neq('user_id', currentUserId)
         .eq('is_active', true);
 
       if (membersData) {
-        // Fetch profiles for each member
-        const memberWithProfiles = await Promise.all(
-          membersData.map(async (member) => {
-            const { data: profile } = await supabase
-              .from('profiles')
-              .select('first_name, last_name, avatar')
-              .eq('id', member.user_id)
-              .single();
-
-            return {
-              id: member.id,
-              user_id: member.user_id,
-              profiles: profile || { first_name: '', last_name: '', avatar: null }
-            };
-          })
-        );
+        const memberWithProfiles = membersData.map((member: any) => ({
+          id: member.id,
+          user_id: member.user_id,
+          profiles: member.profiles || { first_name: '', last_name: '', avatar: null },
+        }));
 
         setMembers(memberWithProfiles);
       }
@@ -96,12 +87,14 @@ export function ComposeMessageDialog({
   const handleSelectMember = async (memberId: string) => {
     try {
       // Get current member record
-      const { data: currentMember } = await supabase
+      const { data: currentMemberRows } = await supabase
         .from('members')
         .select('id')
         .eq('user_id', currentUserId)
-        .single();
+        .eq('is_active', true)
+        .limit(1);
 
+      const currentMember = currentMemberRows?.[0] || null;
       if (!currentMember) return;
 
       // Check if chat already exists between these members

@@ -167,25 +167,34 @@ export const UniversalSearch = () => {
   );
 };
 
+// Build a fuzzy pattern: "chesta" → "%c%h%e%s%t%a%" to match "Cheshta"
+function fuzzyPattern(word: string): string {
+  return '%' + word.split('').join('%') + '%';
+}
+
 async function searchMembers(term: string): Promise<MemberResult[]> {
   const trimmed = term.trim();
   if (!trimmed) return [];
 
   const words = trimmed.split(/\s+/).filter(Boolean);
 
-  // Step 1: Search profiles by name
+  // Step 1: Search profiles by name (exact substring + fuzzy)
   let profileQuery = supabase
     .from('profiles')
     .select('id, first_name, last_name, avatar');
 
   if (words.length === 1) {
-    profileQuery = profileQuery.or(`first_name.ilike.%${words[0]}%,last_name.ilike.%${words[0]}%`);
+    const fuzzy = fuzzyPattern(words[0]);
+    profileQuery = profileQuery.or(
+      `first_name.ilike.%${words[0]}%,last_name.ilike.%${words[0]}%,first_name.ilike.${fuzzy},last_name.ilike.${fuzzy}`
+    );
   } else {
-    // Multi-word: match first_name AND last_name together, or full term in either
     const firstWord = words[0];
     const lastWord = words[words.length - 1];
+    const fuzzyFirst = fuzzyPattern(firstWord);
+    const fuzzyLast = fuzzyPattern(lastWord);
     profileQuery = profileQuery.or(
-      `and(first_name.ilike.%${firstWord}%,last_name.ilike.%${lastWord}%),first_name.ilike.%${trimmed}%,last_name.ilike.%${trimmed}%`
+      `and(first_name.ilike.%${firstWord}%,last_name.ilike.%${lastWord}%),and(first_name.ilike.${fuzzyFirst},last_name.ilike.${fuzzyLast}),first_name.ilike.%${trimmed}%,last_name.ilike.%${trimmed}%`
     );
   }
 

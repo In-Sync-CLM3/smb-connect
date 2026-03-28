@@ -27,11 +27,13 @@ export function useConnection(currentUserId: string | null, targetUserId: string
     try {
       setLoading(true);
 
-      // Get both members
-      const [{ data: currentMember }, { data: otherMember }] = await Promise.all([
-        supabase.from('members').select('id').eq('user_id', currentUserId).maybeSingle(),
-        supabase.from('members').select('id').eq('user_id', targetUserId).maybeSingle(),
+      // Get both members (use limit(1) to handle duplicate member records)
+      const [{ data: currentMembers }, { data: otherMembers }] = await Promise.all([
+        supabase.from('members').select('id').eq('user_id', currentUserId).eq('is_active', true).limit(1),
+        supabase.from('members').select('id').eq('user_id', targetUserId).eq('is_active', true).limit(1),
       ]);
+      const currentMember = currentMembers?.[0] || null;
+      const otherMember = otherMembers?.[0] || null;
 
       if (!currentMember || !otherMember) {
         setLoading(false);

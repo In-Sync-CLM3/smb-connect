@@ -1,9 +1,10 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 
 export function useUnreadMessageCount(currentUserId: string | null) {
   const [unreadCount, setUnreadCount] = useState(0);
   const [memberId, setMemberId] = useState<string | null>(null);
+  const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (!currentUserId) {
@@ -12,12 +13,14 @@ export function useUnreadMessageCount(currentUserId: string | null) {
     }
 
     const fetchMemberAndCount = async () => {
-      // Get member_id for current user
-      const { data: memberData } = await supabase
+      const { data: memberRows } = await supabase
         .from('members')
         .select('id')
         .eq('user_id', currentUserId)
-        .single();
+        .eq('is_active', true)
+        .limit(1);
+
+      const memberData = memberRows?.[0] || null;
 
       if (!memberData) {
         setUnreadCount(0);
@@ -34,7 +37,13 @@ export function useUnreadMessageCount(currentUserId: string | null) {
   useEffect(() => {
     if (!memberId) return;
 
-    // Subscribe to new messages
+    const debouncedFetch = () => {
+      if (debounceTimer.current) clearTimeout(debounceTimer.current);
+      debounceTimer.current = setTimeout(() => {
+        fetchUnreadCount(memberId);
+      }, 500);
+    };
+
     const channel = supabase
       .channel('unread-messages')
       .on(
@@ -44,9 +53,7 @@ export function useUnreadMessageCount(currentUserId: string | null) {
           schema: 'public',
           table: 'messages'
         },
-        () => {
-          fetchUnreadCount(memberId);
-        }
+        debouncedFetch
       )
       .on(
         'postgres_changes',
@@ -55,20 +62,18 @@ export function useUnreadMessageCount(currentUserId: string | null) {
           schema: 'public',
           table: 'chat_participants'
         },
-        () => {
-          fetchUnreadCount(memberId);
-        }
+        debouncedFetch
       )
       .subscribe();
 
     return () => {
+      if (debounceTimer.current) clearTimeout(debounceTimer.current);
       supabase.removeChannel(channel);
     };
   }, [memberId]);
 
   const fetchUnreadCount = async (memberIdToUse: string) => {
     try {
-      // Get all chat participants records for this member including joined_at as fallback
       const { data: participantsData } = await supabase
         .from('chat_participants')
         .select('chat_id, last_read_at, joined_at')
@@ -79,23 +84,33 @@ export function useUnreadMessageCount(currentUserId: string | null) {
         return;
       }
 
-      let totalUnread = 0;
+      // Use the earliest cutoff to fetch all potentially unread messages in one query
+      const chatIds = participantsData.map(p => p.chat_id);
+      const cutoffMap: Record<string, string> = {};
+      let earliestCutoff = new Date().toISOString();
 
-      // For each chat, count messages after last_read_at (or joined_at fallback) from other senders
-      for (const participant of participantsData) {
-        // Use last_read_at if available, otherwise use joined_at as fallback
-        // This ensures we only count messages received after joining the chat
-        const cutoffTime = participant.last_read_at || participant.joined_at || new Date().toISOString();
-        
-        const { count } = await supabase
-          .from('messages')
-          .select('*', { count: 'exact', head: true })
-          .eq('chat_id', participant.chat_id)
-          .neq('sender_id', memberIdToUse)
-          .gt('created_at', cutoffTime);
-
-        totalUnread += count || 0;
+      for (const p of participantsData) {
+        const cutoff = p.last_read_at || p.joined_at || new Date().toISOString();
+        cutoffMap[p.chat_id] = cutoff;
+        if (cutoff < earliestCutoff) earliestCutoff = cutoff;
       }
+
+      // Single query: get all messages across all chats since earliest cutoff
+      const { data: unreadMessages } = await supabase
+        .from('messages')
+        .select('chat_id, created_at')
+        .in('chat_id', chatIds)
+        .neq('sender_id', memberIdToUse)
+        .gt('created_at', earliestCutoff);
+
+      // Count per-chat using the correct cutoff for each chat
+      let totalUnread = 0;
+      (unreadMessages || []).forEach(msg => {
+        const chatCutoff = cutoffMap[msg.chat_id];
+        if (chatCutoff && msg.created_at > chatCutoff) {
+          totalUnread++;
+        }
+      });
 
       setUnreadCount(totalUnread);
     } catch (error) {

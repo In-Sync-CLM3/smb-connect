@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -54,46 +54,48 @@ export function ConversationList({ selectedChatId, onSelectChat, currentUserId }
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [composeOpen, setComposeOpen] = useState(false);
+  const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (currentUserId) {
       loadConversations();
-      subscribeToMessages();
+
+      const channel = supabase
+        .channel('messages-changes')
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'messages'
+          },
+          () => {
+            if (debounceTimer.current) clearTimeout(debounceTimer.current);
+            debounceTimer.current = setTimeout(loadConversations, 500);
+          }
+        )
+        .subscribe();
+
+      return () => {
+        if (debounceTimer.current) clearTimeout(debounceTimer.current);
+        supabase.removeChannel(channel);
+      };
     }
   }, [currentUserId]);
-
-  const subscribeToMessages = () => {
-    const channel = supabase
-      .channel('messages-changes')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'messages'
-        },
-        () => {
-          loadConversations();
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  };
 
   const loadConversations = async () => {
     try {
       if (!currentUserId) return;
 
       // Get member record
-      const { data: memberData } = await supabase
+      const { data: memberRows } = await supabase
         .from('members')
         .select('id, company_id')
         .eq('user_id', currentUserId)
-        .single();
+        .eq('is_active', true)
+        .limit(1);
 
+      const memberData = memberRows?.[0] || null;
       if (!memberData) return;
 
       // Get all chats where user is a participant with their read status
@@ -135,70 +137,86 @@ export function ConversationList({ selectedChatId, onSelectChat, currentUserId }
         return;
       }
 
-      // For each chat, get the last message, other participant info, and unread count
-      const conversationsWithDetails = await Promise.all(
-        chatsData.map(async (chat) => {
-          // Get last message
-          const { data: lastMsg } = await supabase
-            .from('messages')
-            .select('content, created_at, attachments')
-            .eq('chat_id', chat.id)
-            .order('created_at', { ascending: false })
-            .limit(1)
-            .maybeSingle();
+      const chatIdsList = chatsData.map(c => c.id);
 
-          // Calculate unread count for this chat
-          const readStatus = participantReadStatus[chat.id];
-          const cutoffTime = readStatus?.last_read_at || readStatus?.joined_at || new Date().toISOString();
-          
-          const { count: unreadCount } = await supabase
-            .from('messages')
-            .select('*', { count: 'exact', head: true })
-            .eq('chat_id', chat.id)
-            .neq('sender_id', memberData.id)
-            .gt('created_at', cutoffTime);
+      // Batch fetch last messages for all chats
+      const { data: allMessages } = await supabase
+        .from('messages')
+        .select('chat_id, content, created_at, attachments')
+        .in('chat_id', chatIdsList)
+        .order('created_at', { ascending: false });
 
-          // Get other participant (for direct chats)
-          if (chat.type === 'direct') {
-            const { data: otherParticipant } = await supabase
-              .from('chat_participants')
-              .select(`
-                member_id,
-                members!inner(
-                  id,
-                  user_id,
-                  profiles!inner(first_name, last_name, avatar)
-                )
-              `)
-              .eq('chat_id', chat.id)
-              .neq('member_id', memberData.id)
-              .maybeSingle();
+      const lastMsgByChat: Record<string, any> = {};
+      (allMessages || []).forEach(msg => {
+        if (!lastMsgByChat[msg.chat_id]) lastMsgByChat[msg.chat_id] = msg;
+      });
 
-            if (otherParticipant) {
-              const otherProfile = (otherParticipant as any).members.profiles;
-              const lastMessagePreview = getLastMessagePreview(lastMsg);
-              return {
-                id: chat.id,
-                name: `${otherProfile.first_name} ${otherProfile.last_name}`,
-                lastMessage: lastMessagePreview,
-                lastMessageAt: lastMsg?.created_at || chat.last_message_at || new Date().toISOString(),
-                unreadCount: unreadCount || 0,
-                avatar: otherProfile.avatar,
-                otherMemberId: (otherParticipant as any).members.id
-              };
-            }
+      // Batch fetch unread counts - get all unread messages across chats in one query
+      // We'll count per-chat from the result
+      const unreadCountByChat: Record<string, number> = {};
+      for (const chatId of chatIdsList) {
+        const readStatus = participantReadStatus[chatId];
+        const cutoffTime = readStatus?.last_read_at || readStatus?.joined_at || new Date().toISOString();
+
+        const { count } = await supabase
+          .from('messages')
+          .select('*', { count: 'exact', head: true })
+          .eq('chat_id', chatId)
+          .neq('sender_id', memberData.id)
+          .gt('created_at', cutoffTime);
+
+        unreadCountByChat[chatId] = count || 0;
+      }
+
+      // Batch fetch other participants for direct chats
+      const { data: allOtherParticipants } = await supabase
+        .from('chat_participants')
+        .select(`
+          chat_id,
+          member_id,
+          members!inner(
+            id,
+            user_id,
+            profiles!inner(first_name, last_name, avatar)
+          )
+        `)
+        .in('chat_id', chatIdsList)
+        .neq('member_id', memberData.id);
+
+      const otherParticipantByChat: Record<string, any> = {};
+      (allOtherParticipants || []).forEach(p => {
+        if (!otherParticipantByChat[p.chat_id]) otherParticipantByChat[p.chat_id] = p;
+      });
+
+      // Assemble conversations (no per-chat queries for participants)
+      const conversationsWithDetails = chatsData.map(chat => {
+        const lastMsg = lastMsgByChat[chat.id] || null;
+        const lastMessagePreview = getLastMessagePreview(lastMsg);
+
+        if (chat.type === 'direct') {
+          const otherParticipant = otherParticipantByChat[chat.id];
+          if (otherParticipant) {
+            const otherProfile = (otherParticipant as any).members.profiles;
+            return {
+              id: chat.id,
+              name: `${otherProfile.first_name} ${otherProfile.last_name}`,
+              lastMessage: lastMessagePreview,
+              lastMessageAt: lastMsg?.created_at || chat.last_message_at || new Date().toISOString(),
+              unreadCount: unreadCountByChat[chat.id] || 0,
+              avatar: otherProfile.avatar,
+              otherMemberId: (otherParticipant as any).members.id,
+            };
           }
+        }
 
-          const lastMessagePreview = getLastMessagePreview(lastMsg);
-          return {
-            id: chat.id,
-            name: chat.name || 'Group Chat',
-            lastMessage: lastMessagePreview,
-            lastMessageAt: lastMsg?.created_at || chat.last_message_at || new Date().toISOString(),
-            unreadCount: unreadCount || 0
-          };
-        })
-      );
+        return {
+          id: chat.id,
+          name: chat.name || 'Group Chat',
+          lastMessage: lastMessagePreview,
+          lastMessageAt: lastMsg?.created_at || chat.last_message_at || new Date().toISOString(),
+          unreadCount: unreadCountByChat[chat.id] || 0,
+        };
+      });
 
       setConversations(conversationsWithDetails);
       setLoading(false);

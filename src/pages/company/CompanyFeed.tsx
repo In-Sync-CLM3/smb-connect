@@ -222,11 +222,14 @@ export default function CompanyFeed() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      const { data: memberData } = await supabase
+      const { data: memberRows } = await supabase
         .from('members')
         .select('id')
         .eq('user_id', user.id)
-        .maybeSingle();
+        .eq('is_active', true)
+        .limit(1);
+
+      const memberData = memberRows?.[0] || null;
 
       if (!memberData) return;
 
@@ -277,32 +280,35 @@ export default function CompanyFeed() {
           return acc;
         }, {} as Record<string, any>);
 
-        const postsWithDetails = await Promise.all(
-          postsData.map(async (post: any) => {
-            const profile = profilesById[post.user_id] || null;
+        // Batch fetch member data for all post authors
+        const { data: membersData } = await supabase
+          .from('members')
+          .select('user_id, company_id, companies (name)')
+          .in('user_id', userIds)
+          .eq('is_active', true);
 
-            const { data: memberData } = await supabase
-              .from('members')
-              .select('company_id, companies (name)')
-              .eq('user_id', post.user_id)
-              .maybeSingle();
+        const membersByUserId = (membersData || []).reduce((acc: Record<string, any>, m: any) => {
+          if (!acc[m.user_id]) acc[m.user_id] = m;
+          return acc;
+        }, {} as Record<string, any>);
 
-            const { data: likeData } = await supabase
-              .from('post_likes')
-              .select('id')
-              .eq('post_id', post.id)
-              .eq('user_id', user.id)
-              .maybeSingle();
+        // Batch fetch likes for current user
+        const postIds = postsData.map((p: any) => p.id);
+        const { data: likesData } = await supabase
+          .from('post_likes')
+          .select('post_id')
+          .eq('user_id', user.id)
+          .in('post_id', postIds);
 
-            return {
-              ...post,
-              profiles: profile,
-              members: memberData,
-              original_author: post.original_author_id ? profilesById[post.original_author_id] : null,
-              liked_by_user: !!likeData
-            };
-          })
-        );
+        const likedPostIds = new Set(likesData?.map(l => l.post_id) || []);
+
+        const postsWithDetails = postsData.map((post: any) => ({
+          ...post,
+          profiles: profilesById[post.user_id] || null,
+          members: membersByUserId[post.user_id] || null,
+          original_author: post.original_author_id ? profilesById[post.original_author_id] : null,
+          liked_by_user: likedPostIds.has(post.id),
+        }));
 
         setPosts(postsWithDetails as any);
       } else {

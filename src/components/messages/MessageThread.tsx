@@ -71,12 +71,14 @@ export function MessageThread({ chatId, currentUserId, compact = false, onMarkAs
     if (!currentUserId || !chatId) return;
 
     try {
-      const { data: memberData } = await supabase
+      const { data: memberRows } = await supabase
         .from('members')
         .select('id')
         .eq('user_id', currentUserId)
-        .single();
+        .eq('is_active', true)
+        .limit(1);
 
+      const memberData = memberRows?.[0] || null;
       if (memberData) {
         await supabase
           .from('chat_participants')
@@ -112,12 +114,14 @@ export function MessageThread({ chatId, currentUserId, compact = false, onMarkAs
 
       if (chatData) {
         if (chatData.type === 'direct') {
-          const { data: memberData } = await supabase
+          const { data: memberRows2 } = await supabase
             .from('members')
             .select('id')
             .eq('user_id', currentUserId)
-            .single();
+            .eq('is_active', true)
+            .limit(1);
 
+          const memberData = memberRows2?.[0] || null;
           if (memberData) {
             const { data: otherParticipant } = await supabase
               .from('chat_participants')
@@ -174,12 +178,14 @@ export function MessageThread({ chatId, currentUserId, compact = false, onMarkAs
     try {
       if (!currentUserId) return;
 
-      const { data: memberData } = await supabase
+      const { data: memberRows3 } = await supabase
         .from('members')
         .select('id')
         .eq('user_id', currentUserId)
-        .single();
+        .eq('is_active', true)
+        .limit(1);
 
+      const memberData = memberRows3?.[0] || null;
       if (!memberData) return;
       setCurrentMemberId(memberData.id);
 

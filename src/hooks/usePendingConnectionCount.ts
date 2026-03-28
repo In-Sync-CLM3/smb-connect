@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 
 export function usePendingConnectionCount(currentUserId: string | null) {
   const [pendingCount, setPendingCount] = useState(0);
+  const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (!currentUserId) {
@@ -12,19 +13,20 @@ export function usePendingConnectionCount(currentUserId: string | null) {
 
     const fetchPendingCount = async () => {
       try {
-        // Get member_id for current user
-        const { data: memberData } = await supabase
+        const { data: memberRows } = await supabase
           .from('members')
           .select('id')
           .eq('user_id', currentUserId)
-          .single();
+          .eq('is_active', true)
+          .limit(1);
+
+        const memberData = memberRows?.[0] || null;
 
         if (!memberData) {
           setPendingCount(0);
           return;
         }
 
-        // Count pending connection requests where the current user is the receiver
         const { count } = await supabase
           .from('connections')
           .select('*', { count: 'exact', head: true })
@@ -39,7 +41,11 @@ export function usePendingConnectionCount(currentUserId: string | null) {
 
     fetchPendingCount();
 
-    // Subscribe to connection changes
+    const debouncedFetch = () => {
+      if (debounceTimer.current) clearTimeout(debounceTimer.current);
+      debounceTimer.current = setTimeout(fetchPendingCount, 500);
+    };
+
     const channel = supabase
       .channel('pending-connections')
       .on(
@@ -49,13 +55,12 @@ export function usePendingConnectionCount(currentUserId: string | null) {
           schema: 'public',
           table: 'connections'
         },
-        () => {
-          fetchPendingCount();
-        }
+        debouncedFetch
       )
       .subscribe();
 
     return () => {
+      if (debounceTimer.current) clearTimeout(debounceTimer.current);
       supabase.removeChannel(channel);
     };
   }, [currentUserId]);

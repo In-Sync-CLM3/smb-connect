@@ -82,12 +82,14 @@ export function FloatingChat({ currentUserId, initialChatId }: FloatingChatProps
       if (!currentUserId) return;
 
       // Get member record for current user
-      const { data: memberData } = await supabase
+      const { data: memberRows } = await supabase
         .from('members')
         .select('id')
         .eq('user_id', currentUserId)
-        .single();
+        .eq('is_active', true)
+        .limit(1);
 
+      const memberData = memberRows?.[0] || null;
       if (!memberData) return;
 
       // Get chats where current member is participant
@@ -115,59 +117,80 @@ export function FloatingChat({ currentUserId, initialChatId }: FloatingChatProps
         return;
       }
 
-      const conversationsWithDetails = await Promise.all(
-        chatsData.map(async (chat) => {
-          const { data: lastMsg } = await supabase
-            .from('messages')
-            .select('content, created_at, attachments')
-            .eq('chat_id', chat.id)
-            .order('created_at', { ascending: false })
-            .limit(1)
-            .maybeSingle();
+      // Batch fetch last messages for all chats
+      const chatIdsList = chatsData.map(c => c.id);
+      const { data: allMessages } = await supabase
+        .from('messages')
+        .select('chat_id, content, created_at, attachments')
+        .in('chat_id', chatIdsList)
+        .order('created_at', { ascending: false });
 
-          if (chat.type === 'direct') {
-            const { data: otherParticipant } = await supabase
-              .from('chat_participants')
-              .select('member_id')
-              .eq('chat_id', chat.id)
-              .neq('member_id', memberData.id)
-              .maybeSingle();
+      const lastMsgByChat: Record<string, any> = {};
+      (allMessages || []).forEach(msg => {
+        if (!lastMsgByChat[msg.chat_id]) lastMsgByChat[msg.chat_id] = msg;
+      });
 
-            if (otherParticipant) {
-              const { data: otherMember } = await supabase
-                .from('members')
-                .select('user_id')
-                .eq('id', otherParticipant.member_id)
-                .single();
+      // Batch fetch all participants for these chats (to find other members in direct chats)
+      const { data: allParticipants } = await supabase
+        .from('chat_participants')
+        .select('chat_id, member_id')
+        .in('chat_id', chatIdsList)
+        .neq('member_id', memberData.id);
 
-              if (otherMember) {
-                const { data: otherProfile } = await supabase
-                  .from('profiles')
-                  .select('first_name, last_name, avatar')
-                  .eq('id', otherMember.user_id)
-                  .single();
+      const otherParticipantByChat: Record<string, string> = {};
+      (allParticipants || []).forEach(p => {
+        if (!otherParticipantByChat[p.chat_id]) otherParticipantByChat[p.chat_id] = p.member_id;
+      });
 
-                if (otherProfile) {
-                  return {
-                    id: chat.id,
-                    name: `${otherProfile.first_name} ${otherProfile.last_name}`,
-                    lastMessage: getLastMessagePreview(lastMsg),
-                    lastMessageAt: lastMsg?.created_at || chat.last_message_at || new Date().toISOString(),
-                    avatar: otherProfile.avatar || undefined
-                  };
-                }
-              }
-            }
+      // Batch fetch member details
+      const otherMemberIds = Array.from(new Set(Object.values(otherParticipantByChat)));
+      const { data: otherMembers } = otherMemberIds.length > 0
+        ? await supabase.from('members').select('id, user_id').in('id', otherMemberIds).eq('is_active', true)
+        : { data: [] };
+
+      const membersByIdMap = (otherMembers || []).reduce((acc: Record<string, any>, m: any) => {
+        acc[m.id] = m;
+        return acc;
+      }, {} as Record<string, any>);
+
+      // Batch fetch profiles
+      const otherUserIds = Array.from(new Set((otherMembers || []).map(m => m.user_id)));
+      const { data: otherProfiles } = otherUserIds.length > 0
+        ? await supabase.from('profiles').select('id, first_name, last_name, avatar').in('id', otherUserIds)
+        : { data: [] };
+
+      const profilesByUserIdMap = (otherProfiles || []).reduce((acc: Record<string, any>, p: any) => {
+        acc[p.id] = p;
+        return acc;
+      }, {} as Record<string, any>);
+
+      // Assemble conversations (no per-chat queries)
+      const conversationsWithDetails = chatsData.map(chat => {
+        const lastMsg = lastMsgByChat[chat.id] || null;
+
+        if (chat.type === 'direct') {
+          const otherMemberId = otherParticipantByChat[chat.id];
+          const otherMember = otherMemberId ? membersByIdMap[otherMemberId] : null;
+          const otherProfile = otherMember ? profilesByUserIdMap[otherMember.user_id] : null;
+
+          if (otherProfile) {
+            return {
+              id: chat.id,
+              name: `${otherProfile.first_name} ${otherProfile.last_name}`,
+              lastMessage: getLastMessagePreview(lastMsg),
+              lastMessageAt: lastMsg?.created_at || chat.last_message_at || new Date().toISOString(),
+              avatar: otherProfile.avatar || undefined,
+            };
           }
+        }
 
-          return {
-            id: chat.id,
-            name: chat.name || 'Group Chat',
-            lastMessage: getLastMessagePreview(lastMsg),
-            lastMessageAt: lastMsg?.created_at || chat.last_message_at || new Date().toISOString()
-          };
-        })
-      );
+        return {
+          id: chat.id,
+          name: chat.name || 'Group Chat',
+          lastMessage: getLastMessagePreview(lastMsg),
+          lastMessageAt: lastMsg?.created_at || chat.last_message_at || new Date().toISOString(),
+        };
+      });
 
       setConversations(conversationsWithDetails);
     } catch (error) {
