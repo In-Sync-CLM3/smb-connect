@@ -255,7 +255,11 @@ export default function BrowseMembers() {
           .in('id', chunk);
 
         (profilesChunk || []).forEach(p => {
-          profilesById[p.id] = p;
+          profilesById[p.id] = {
+            ...p,
+            first_name: p.first_name || '',
+            last_name: p.last_name || '',
+          };
         });
       }
 
@@ -603,8 +607,10 @@ export default function BrowseMembers() {
                     </TableRow>
                   ) : (
                     filteredMembers.map(member => {
-                      const fullName = `${member.profile.first_name} ${member.profile.last_name}`;
-                      const initials = `${member.profile.first_name[0]}${member.profile.last_name[0]}`;
+                      const firstName = member.profile.first_name || '';
+                      const lastName = member.profile.last_name || '';
+                      const fullName = `${firstName} ${lastName}`.trim() || 'Unknown';
+                      const initials = `${firstName[0] || '?'}${lastName[0] || '?'}`;
 
                       return (
                         <TableRow 
