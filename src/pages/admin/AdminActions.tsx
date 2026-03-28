@@ -52,32 +52,20 @@ export default function AdminActions() {
 
   const loadStats = async () => {
     try {
-      // Load associations count
-      const { count: associationsCount } = await supabase
-        .from('associations')
-        .select('*', { count: 'exact', head: true });
-
-      // Load companies count
-      const { count: companiesCount } = await supabase
-        .from('companies')
-        .select('*', { count: 'exact', head: true });
-
-      // Load users count from profiles
-      const { count: usersCount } = await supabase
-        .from('profiles')
-        .select('*', { count: 'exact', head: true });
-
-      // Load pending association requests count
-      const { count: associationRequestsCount } = await supabase
-        .from('association_requests')
-        .select('*', { count: 'exact', head: true })
-        .eq('status', 'pending');
-
-      // Load pending company requests count
-      const { count: companyRequestsCount } = await supabase
-        .from('company_requests')
-        .select('*', { count: 'exact', head: true })
-        .eq('status', 'pending');
+      // Load all counts in parallel
+      const [
+        { count: associationsCount },
+        { count: companiesCount },
+        { count: usersCount },
+        { count: associationRequestsCount },
+        { count: companyRequestsCount },
+      ] = await Promise.all([
+        supabase.from('associations').select('*', { count: 'exact', head: true }),
+        supabase.from('companies').select('*', { count: 'exact', head: true }),
+        supabase.from('profiles').select('*', { count: 'exact', head: true }),
+        supabase.from('association_requests').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
+        supabase.from('company_requests').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
+      ]);
 
       setStats({
         totalAssociations: associationsCount || 0,
