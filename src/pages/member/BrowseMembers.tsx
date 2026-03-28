@@ -192,7 +192,8 @@ export default function BrowseMembers() {
       setLoading(true);
 
       // Get current auth user
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user;
       if (!user) {
         console.log('No authenticated user found');
         return;

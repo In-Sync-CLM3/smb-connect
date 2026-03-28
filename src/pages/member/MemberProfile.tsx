@@ -266,7 +266,8 @@ export default function MemberProfile() {
       setPostsLoading(true);
       
       // Get current user for checking likes
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user;
       
       // Load posts by this user
       const { data: postsData, error } = await supabase
@@ -405,7 +406,8 @@ export default function MemberProfile() {
   };
 
   const loadCurrentUser = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
+    const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user;
     setCurrentUser(user?.id || null);
   };
 

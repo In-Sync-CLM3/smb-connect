@@ -34,7 +34,8 @@ export default function CompanyMembers() {
 
   const loadMembers = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user;
       
       // Get members with profiles
       const { data: membersData, error } = await supabase

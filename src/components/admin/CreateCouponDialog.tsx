@@ -160,8 +160,9 @@ export function CreateCouponDialog({
 
   const createMutation = useMutation({
     mutationFn: async (data: CouponFormData) => {
-      const { data: user } = await supabase.auth.getUser();
-      if (!user.user) throw new Error("Not authenticated");
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user) throw new Error("Not authenticated");
+      const user = { user: session.user };
 
       const couponData = {
         code: data.code.toUpperCase(),

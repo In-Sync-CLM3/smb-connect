@@ -12,7 +12,8 @@ export function useAvailableRoles() {
 
   const loadAvailableRoles = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user;
       if (!user) {
         setAvailableRoles(null);
         setLoading(false);
@@ -28,22 +29,34 @@ export function useAvailableRoles() {
         isMember: false,
       };
 
-      // Check admin status
-      const { data: adminData } = await supabase
-        .from('admin_users')
-        .select('is_super_admin, is_hidden')
-        .eq('user_id', user.id)
-        .eq('is_active', true)
-        .maybeSingle();
+      // Run all role checks in parallel
+      const [adminResult, assocManagerResult, memberResult] = await Promise.all([
+        supabase
+          .from('admin_users')
+          .select('is_super_admin, is_hidden')
+          .eq('user_id', user.id)
+          .eq('is_active', true)
+          .maybeSingle(),
+        supabase
+          .from('association_managers')
+          .select('association_id, association:associations(id, name)')
+          .eq('user_id', user.id)
+          .eq('is_active', true),
+        supabase
+          .from('members')
+          .select('id, company_id, role, company:companies(id, name)')
+          .eq('user_id', user.id)
+          .eq('is_active', true),
+      ]);
 
+      const adminData = adminResult.data;
       if (adminData) {
         roles.isAdmin = true;
         roles.isSuperAdmin = adminData.is_super_admin || false;
         roles.isPlatformAdmin = adminData.is_super_admin && (adminData as any).is_hidden === true;
       }
 
-      // Check association manager roles
-      // Admins get access to ALL associations for troubleshooting
+      // Associations
       if (roles.isAdmin) {
         const { data: allAssociations } = await supabase
           .from('associations')
@@ -51,16 +64,9 @@ export function useAvailableRoles() {
           .eq('is_active', true)
           .order('name');
 
-        if (allAssociations && allAssociations.length > 0) {
-          roles.associations = allAssociations;
-        }
+        roles.associations = allAssociations || [];
       } else {
-        const { data: associationManagers } = await supabase
-          .from('association_managers')
-          .select('association_id, association:associations(id, name)')
-          .eq('user_id', user.id)
-          .eq('is_active', true);
-
+        const associationManagers = assocManagerResult.data;
         if (associationManagers && associationManagers.length > 0) {
           roles.associations = associationManagers
             .filter(am => am.association)
@@ -71,8 +77,7 @@ export function useAvailableRoles() {
         }
       }
 
-      // Check company admin roles
-      // Admins get access to ALL companies for troubleshooting
+      // Companies
       if (roles.isAdmin) {
         const { data: allCompanies } = await supabase
           .from('companies')
@@ -88,50 +93,23 @@ export function useAvailableRoles() {
           }));
         }
       } else {
-        const { data: companyAdmins } = await supabase
-          .from('members')
-          .select('company_id, role, company:companies(id, name)')
-          .eq('user_id', user.id)
-          .in('role', ['owner', 'admin'])
-          .eq('is_active', true);
-
-        if (companyAdmins && companyAdmins.length > 0) {
-          roles.companies = companyAdmins
-            .filter(ca => ca.company)
-            .map(ca => ({
-              id: (ca.company as any).id,
-              name: (ca.company as any).name,
-              role: ca.role as 'owner' | 'admin',
-            }));
+        const memberData = memberResult.data;
+        if (memberData && memberData.length > 0) {
+          const companyAdmins = memberData.filter(m => ['owner', 'admin'].includes(m.role));
+          if (companyAdmins.length > 0) {
+            roles.companies = companyAdmins
+              .filter(ca => ca.company)
+              .map(ca => ({
+                id: (ca.company as any).id,
+                name: (ca.company as any).name,
+                role: ca.role as 'owner' | 'admin',
+              }));
+          }
         }
       }
 
-      // Check member status - all users with a member record can access member features
-      const { data: memberDataArr, error: memberError } = await supabase
-        .from('members')
-        .select('id')
-        .eq('user_id', user.id)
-        .eq('is_active', true)
-        .limit(1);
-
-      if (memberError) {
-        console.error('Error checking member status:', memberError);
-      }
-
-      roles.isMember = !!(memberDataArr && memberDataArr.length > 0);
-      
-      // If user is an admin but also has a member record, ensure isMember is true
-      // This ensures admins can still access member features
-      if (!roles.isMember && roles.isAdmin) {
-        // Double-check with a broader query for admins
-        const { data: adminMemberCheck } = await supabase
-          .from('members')
-          .select('id')
-          .eq('user_id', user.id)
-          .limit(1);
-        
-        roles.isMember = !!(adminMemberCheck && adminMemberCheck.length > 0);
-      }
+      // Member status - already fetched above
+      roles.isMember = !!(memberResult.data && memberResult.data.length > 0);
 
       setAvailableRoles(roles);
       setLoading(false);

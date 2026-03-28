@@ -136,7 +136,8 @@ export function ManageCertificationDialog({
     setLoading(true);
 
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user;
       if (!user) throw new Error('Not authenticated');
 
       let certificateFileUrl = formData.certificate_file_url;
@@ -191,7 +192,8 @@ export function ManageCertificationDialog({
     setLoading(true);
 
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user;
       if (!user) throw new Error('Not authenticated');
 
       // Remove file from storage if exists

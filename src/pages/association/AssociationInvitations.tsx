@@ -140,7 +140,8 @@ export default function AssociationInvitations() {
 
     try {
       // Get current user for invited_by field
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user;
       
       // Generate unique token
       const token = crypto.randomUUID();

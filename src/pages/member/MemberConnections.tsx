@@ -52,7 +52,8 @@ export default function MemberConnections() {
   // First, get the current user's member ID
   useEffect(() => {
     const loadCurrentMember = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user;
       if (!user) return;
 
       const { data: memberDataArr } = await supabase

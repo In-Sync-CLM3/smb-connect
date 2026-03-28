@@ -170,7 +170,8 @@ export default function AssociationFeed() {
   }, [associationInfo?.id]);
 
   const loadCurrentUser = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
+    const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user;
     if (user) {
       setCurrentUserId(user.id);
     }
@@ -178,7 +179,8 @@ export default function AssociationFeed() {
 
   const loadProfile = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user;
       if (!user) return;
 
       const { data: profileData } = await supabase
@@ -197,7 +199,8 @@ export default function AssociationFeed() {
 
   const loadAssociationInfo = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user;
       if (!user) {
         console.warn('loadAssociationInfo: No authenticated user');
         return;
@@ -303,7 +306,8 @@ export default function AssociationFeed() {
 
   const loadPendingConnectionsCount = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user;
       if (!user) return;
 
       const { data: memberRows } = await supabase
@@ -331,7 +335,8 @@ export default function AssociationFeed() {
 
   const loadPosts = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user;
       if (!user) return;
 
       // Only load posts for this specific association

@@ -75,7 +75,8 @@ export function usePosts() {
 
   const createPost = async (content: string, imageUrl?: string | null) => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user;
       if (!user) throw new Error('Not authenticated');
 
       const { error: insertError } = await supabase.from('posts').insert({

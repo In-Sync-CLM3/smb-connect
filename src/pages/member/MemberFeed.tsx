@@ -180,7 +180,8 @@ export default function MemberFeed() {
 
   const loadPendingConnectionsCount = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user;
       if (!user) return;
 
       // Get the current user's member ID (use limit(1) to handle duplicate member records)
@@ -209,7 +210,8 @@ export default function MemberFeed() {
 
   const loadProfile = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user;
       if (!user) return;
 
       setCurrentUserId(user.id);
@@ -269,7 +271,8 @@ export default function MemberFeed() {
   const loadPosts = async () => {
     try {
       setLoading(true);
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user;
 
       // Load member + association posts
       const { data: postsData, error } = await supabase
@@ -378,7 +381,8 @@ export default function MemberFeed() {
 
     setPosting(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user;
       if (!user) throw new Error('Not authenticated');
 
       let imageUrl = null;
@@ -629,7 +633,8 @@ export default function MemberFeed() {
 
   const handleLikePost = async (postId: string, currentlyLiked: boolean) => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user;
       if (!user) throw new Error('Not authenticated');
 
       if (currentlyLiked) {

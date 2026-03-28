@@ -64,7 +64,8 @@ export function BulkInviteCompaniesDialog({
         const errors: string[] = [];
 
         // Fetch association name and user profile data before processing
-        const { data: userData } = await supabase.auth.getUser();
+        const { data: { session: userSession } } = await supabase.auth.getSession();
+        const userData = { user: userSession?.user };
         if (!userData?.user?.id) {
           toast.error('User not authenticated');
           setUploading(false);

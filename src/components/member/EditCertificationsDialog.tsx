@@ -97,7 +97,8 @@ export function EditCertificationsDialog({ onSave }: EditCertificationsDialogPro
     setLoading(true);
 
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user;
       if (!user) throw new Error('Not authenticated');
 
       let certificateFileUrl: string | null = null;

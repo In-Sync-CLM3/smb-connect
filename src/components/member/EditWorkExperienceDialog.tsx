@@ -41,7 +41,8 @@ export function EditWorkExperienceDialog({ onSave }: EditWorkExperienceDialogPro
     setLoading(true);
 
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user;
       if (!user) throw new Error('Not authenticated');
 
       const { error } = await supabase.from('work_experience').insert({

@@ -25,7 +25,8 @@ export function useOnboarding() {
 
   const loadOnboardingStatus = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user;
       if (!user) return;
 
       const { data, error } = await supabase
@@ -63,7 +64,8 @@ export function useOnboarding() {
 
   const completeStep = async (stepId: string) => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user;
       if (!user) return;
 
       const newCompletedSteps = [...completedSteps, stepId];
@@ -86,7 +88,8 @@ export function useOnboarding() {
 
   const completeOnboarding = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user;
       if (!user) return;
 
       const { error } = await supabase

@@ -72,7 +72,8 @@ export default function AcceptInvitation() {
       }
 
       // Check current user
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user;
       setCurrentUser(user);
 
       // Verify invitation using edge function (bypasses RLS)

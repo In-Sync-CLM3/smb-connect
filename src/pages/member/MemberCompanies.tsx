@@ -49,7 +49,8 @@ export default function MemberCompanies() {
   const loadCompanies = async () => {
     try {
       // Get user's association through their company membership
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user;
       if (!user) return;
 
       const { data: memberData } = await supabase

@@ -290,7 +290,8 @@ export default function EventsCalendar() {
         if (error) throw error;
       } else {
         // Create new event
-        const { data: { user } } = await supabase.auth.getUser();
+        const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user;
         if (!user) throw new Error('Not authenticated');
 
         const { error } = await supabase

@@ -77,7 +77,8 @@ export default function AdminAssociationRequests() {
 
     try {
       setProcessing(true);
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user;
       if (!user) throw new Error('Not authenticated');
 
       if (reviewDialog.action === 'approve') {

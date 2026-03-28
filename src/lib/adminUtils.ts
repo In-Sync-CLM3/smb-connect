@@ -23,7 +23,8 @@ export async function getHiddenAdminIds(): Promise<string[]> {
  * Check if the current user is a hidden (platform) admin
  */
 export async function isCurrentUserHiddenAdmin(): Promise<boolean> {
-  const { data: { user } } = await supabase.auth.getUser();
+  const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user;
   if (!user) return false;
 
   const { data } = await supabase
