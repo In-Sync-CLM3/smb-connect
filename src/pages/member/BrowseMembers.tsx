@@ -242,17 +242,22 @@ export default function BrowseMembers() {
 
       if (membersError) throw membersError;
 
-      // Batch fetch all profiles in a single query
+      // Batch fetch all profiles in chunked queries (to avoid URL length limits)
       const userIds = (membersData || []).map(m => m.user_id);
-      const { data: profilesData } = await supabase
-        .from('profiles')
-        .select('id, first_name, last_name, avatar, bio')
-        .in('id', userIds);
+      const CHUNK_SIZE = 50;
+      const profilesById: Record<string, any> = {};
 
-      const profilesById = (profilesData || []).reduce((acc: Record<string, any>, p: any) => {
-        acc[p.id] = p;
-        return acc;
-      }, {} as Record<string, any>);
+      for (let i = 0; i < userIds.length; i += CHUNK_SIZE) {
+        const chunk = userIds.slice(i, i + CHUNK_SIZE);
+        const { data: profilesChunk } = await supabase
+          .from('profiles')
+          .select('id, first_name, last_name, avatar, bio')
+          .in('id', chunk);
+
+        (profilesChunk || []).forEach(p => {
+          profilesById[p.id] = p;
+        });
+      }
 
       const membersWithProfiles = (membersData || []).map(member => ({
         ...member,
