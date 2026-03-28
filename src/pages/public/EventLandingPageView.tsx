@@ -26,46 +26,32 @@ interface LandingPageData {
   } | null;
 }
 
+// Session cache for instant loading on repeat visits (low-network users)
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+function getCachedPage(slug: string, subPage: string): LandingPageData | null {
+  try {
+    const raw = sessionStorage.getItem(`smb_lp_${slug}_${subPage}`);
+    if (!raw) return null;
+    const { data, ts } = JSON.parse(raw);
+    if (Date.now() - ts > CACHE_TTL_MS) {
+      sessionStorage.removeItem(`smb_lp_${slug}_${subPage}`);
+      return null;
+    }
+    return data;
+  } catch { return null; }
+}
+
+function setCachedPage(slug: string, subPage: string, data: LandingPageData): void {
+  try {
+    sessionStorage.setItem(`smb_lp_${slug}_${subPage}`, JSON.stringify({ data, ts: Date.now() }));
+  } catch { /* ignore quota errors */ }
+}
+
+// Headers for edge functions still used (process-event-registration)
 const EDGE_FUNCTION_HEADERS = {
   'Content-Type': 'application/json',
   apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-};
-
-const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
-const fetchWithRetry = async (url: string, options: RequestInit, maxRetries = 2) => {
-  let lastError: unknown;
-
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000);
-
-    try {
-      const retryParam = `${url.includes('?') ? '&' : '?'}_r=${Date.now()}-${attempt}`;
-      const response = await fetch(`${url}${retryParam}`, {
-        ...options,
-        cache: 'no-store',
-        signal: controller.signal,
-      });
-
-      clearTimeout(timeoutId);
-
-      if (response.ok || response.status === 404 || attempt === maxRetries) {
-        return response;
-      }
-    } catch (error) {
-      clearTimeout(timeoutId);
-      lastError = error;
-
-      if (attempt === maxRetries) {
-        throw error;
-      }
-    }
-
-    await wait((attempt + 1) * 500);
-  }
-
-  throw (lastError instanceof Error ? lastError : new Error('Request failed'));
 };
 
 const EventLandingPageView = () => {
@@ -76,6 +62,7 @@ const EventLandingPageView = () => {
   const [registrationStatus, setRegistrationStatus] = useState<'idle' | 'submitting' | 'success' | 'error'>('idle');
   const [registrationMessage, setRegistrationMessage] = useState<string>('');
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const registrationInFlight = useRef(false);
 
   useEffect(() => {
     const fetchLandingPage = async () => {
@@ -85,31 +72,37 @@ const EventLandingPageView = () => {
         return;
       }
 
-      try {
-        const pageParam = subPage ? `&page=${encodeURIComponent(subPage)}` : '';
-        const response = await fetchWithRetry(
-          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/get-landing-page?slug=${encodeURIComponent(slug)}${pageParam}`,
-          {
-            method: 'GET',
-            headers: EDGE_FUNCTION_HEADERS,
-          }
-        );
+      // Instant load from session cache (helps low-network users)
+      const cached = getCachedPage(slug, subPage || '');
+      if (cached) {
+        setLandingPage(cached);
+        setLoading(false);
+      }
 
-        if (!response.ok) {
-          if (response.status === 404) {
-            setError('Event page not found');
-          } else {
-            setError('Failed to load event page');
-          }
-          setLoading(false);
+      try {
+        // RPC call — single PostgREST roundtrip, no edge function cold start
+        const { data: pageData, error: rpcError } = await supabase
+          .rpc('get_landing_page' as any, {
+            p_slug: slug,
+            p_page_slug: subPage || '',
+          });
+
+        if (rpcError) {
+          if (!cached) setError('Failed to load event page');
           return;
         }
 
-        const pageData = await response.json();
+        if (pageData?.error) {
+          if (!cached) setError(pageData.error === 'Page not found' || pageData.error === 'Landing page not found'
+            ? 'Event page not found' : 'Failed to load event page');
+          return;
+        }
+
         setLandingPage(pageData);
+        setCachedPage(slug, subPage || '', pageData);
       } catch (err) {
         console.error('Error fetching landing page:', err);
-        setError('Failed to load event page');
+        if (!cached) setError('Failed to load event page');
       } finally {
         setLoading(false);
       }
@@ -123,13 +116,20 @@ const EventLandingPageView = () => {
     const handleMessage = async (event: MessageEvent) => {
       if (event.data?.type === 'event-registration') {
         const formData = event.data.data;
-        
+
         console.log('[SMB Registration] Received from iframe:', formData);
-        
+
         if (!landingPage) {
           console.error('[SMB Registration] No landing page data available');
           return;
         }
+
+        // Prevent duplicate submissions (race condition: iframe can fire multiple messages)
+        if (registrationInFlight.current) {
+          console.log('[SMB Registration] Ignoring duplicate submission — already in flight');
+          return;
+        }
+        registrationInFlight.current = true;
 
         setRegistrationStatus('submitting');
         setRegistrationMessage('');
@@ -194,6 +194,8 @@ const EventLandingPageView = () => {
             { type: 'registration-error', message: errorMsg },
             '*'
           );
+        } finally {
+          registrationInFlight.current = false;
         }
       }
     };
@@ -433,13 +435,13 @@ const EventLandingPageView = () => {
             applyBtn.disabled = true;
             applyBtn.textContent = 'Validating...';
             
-            fetch(supabaseUrl + '/functions/v1/validate-coupon', {
+            fetch(supabaseUrl + '/rest/v1/rpc/validate_coupon', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', 'apikey': publishableKey },
               body: JSON.stringify({
-                code: code,
-                landing_page_id: landingPageId,
-                email: email
+                p_code: code,
+                p_landing_page_id: landingPageId,
+                p_email: email
               })
             })
             .then(function(res) { return res.json(); })

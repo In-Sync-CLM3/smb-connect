@@ -43,23 +43,8 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Check if user is super admin
-    const { data: adminData, error: adminError } = await supabaseAdmin
-      .from('admin_users')
-      .select('is_super_admin')
-      .eq('user_id', user.id)
-      .eq('is_active', true)
-      .single();
-
-    if (adminError || !adminData?.is_super_admin) {
-      return new Response(
-        JSON.stringify({ error: 'Super admin access required' }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 403 }
-      );
-    }
-
     const { companyIds, password, notes }: HardDeleteRequest = await req.json();
-    
+
     if (!companyIds || !Array.isArray(companyIds) || companyIds.length === 0) {
       return new Response(
         JSON.stringify({ error: 'Company IDs array is required' }),
@@ -74,12 +59,12 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Verify password by creating a fresh client to test authentication
+    // Verify password (requires Auth API — cannot be done in PostgreSQL)
     const authTestClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_ANON_KEY') ?? ''
     );
-    
+
     const { error: authError } = await authTestClient.auth.signInWithPassword({
       email: user.email!,
       password: password
@@ -93,78 +78,26 @@ Deno.serve(async (req) => {
       );
     }
 
-    console.log(`Hard deleting ${companyIds.length} companies...`);
+    // Delegate all DB operations to RPC (single call replaces N*4 sequential roundtrips)
+    const { data, error: rpcError } = await supabaseAdmin.rpc('hard_delete_companies', {
+      p_company_ids: companyIds,
+      p_user_id: user.id,
+      p_notes: notes,
+    });
 
-    let successCount = 0;
-    let failCount = 0;
-    const errors: string[] = [];
+    if (rpcError) throw rpcError;
 
-    for (const companyId of companyIds) {
-      try {
-        // Get company name for audit log
-        const { data: company } = await supabaseAdmin
-          .from('companies')
-          .select('name')
-          .eq('id', companyId)
-          .single();
-
-        // Delete company_admins
-        const { error: companyAdminsError } = await supabaseAdmin
-          .from('company_admins')
-          .delete()
-          .eq('company_id', companyId);
-        
-        if (companyAdminsError) {
-          console.log(`Error deleting company admins for ${companyId}:`, companyAdminsError.message);
-        }
-
-        // Delete members
-        const { error: membersError } = await supabaseAdmin
-          .from('members')
-          .delete()
-          .eq('company_id', companyId);
-        
-        if (membersError) {
-          console.log(`Error deleting members for ${companyId}:`, membersError.message);
-        }
-
-        // Delete the company
-        const { error: companyError } = await supabaseAdmin
-          .from('companies')
-          .delete()
-          .eq('id', companyId);
-
-        if (companyError) throw companyError;
-
-        // Log the deletion
-        await supabaseAdmin.from('audit_logs').insert({
-          user_id: user.id,
-          action: 'hard_delete',
-          resource: 'company',
-          resource_id: companyId,
-          changes: { 
-            deleted_company: company?.name || companyId,
-            deletion_notes: notes 
-          }
-        });
-
-        successCount++;
-        console.log(`Hard deleted company: ${companyId}`);
-      } catch (error: any) {
-        failCount++;
-        errors.push(`${companyId}: ${error.message}`);
-        console.error(`Failed to hard delete company ${companyId}:`, error);
-      }
+    if (data?.error) {
+      return new Response(
+        JSON.stringify({ error: data.error }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 403 }
+      );
     }
 
-    console.log(`Hard deletion complete: ${successCount} deleted, ${failCount} failed`);
+    console.log(`Hard deletion complete: ${data.success} deleted, ${data.failed} failed`);
 
     return new Response(
-      JSON.stringify({
-        success: successCount,
-        failed: failCount,
-        errors: errors.slice(0, 10),
-      }),
+      JSON.stringify(data),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 200,

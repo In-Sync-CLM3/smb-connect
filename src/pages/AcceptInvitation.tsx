@@ -76,13 +76,9 @@ export default function AcceptInvitation() {
       const user = session?.user;
       setCurrentUser(user);
 
-      // Verify invitation using edge function (bypasses RLS)
-      const { data: verifyData, error: verifyError } = await supabase.functions.invoke(
-        'verify-company-invitation',
-        {
-          body: { token }
-        }
-      );
+      // Verify invitation via RPC (bypasses RLS via SECURITY DEFINER)
+      const { data: verifyData, error: verifyError } = await supabase
+        .rpc('verify_company_invitation' as any, { p_token: token });
 
       if (verifyError || !verifyData?.valid) {
         setError(verifyData?.error || 'Invitation not found or invalid.');

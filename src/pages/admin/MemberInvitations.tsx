@@ -141,18 +141,19 @@ export default function MemberInvitations() {
     try {
       setActionLoading(invitationId);
 
-      const { data, error } = await supabase.functions.invoke(
-        'revoke-member-invitation',
-        {
-          body: { invitation_id: invitationId, reason: 'Revoked by admin' },
-        }
-      );
+      const { data, error } = await supabase
+        .rpc('revoke_member_invitation' as any, {
+          p_invitation_id: invitationId,
+          p_reason: 'Revoked by admin',
+        });
 
       if (error) throw error;
 
-      if (data.success) {
+      if (data?.success) {
         toast.success('Invitation revoked successfully');
         loadInvitations();
+      } else {
+        toast.error(data?.error || 'Failed to revoke invitation');
       }
     } catch (error: any) {
       console.error('Error revoking invitation:', error);

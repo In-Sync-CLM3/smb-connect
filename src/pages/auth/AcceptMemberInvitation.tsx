@@ -73,12 +73,8 @@ export default function AcceptMemberInvitation() {
       setLoading(true);
       setError(null);
 
-      const { data, error: functionError } = await supabase.functions.invoke(
-        'verify-member-invitation',
-        {
-          body: { token },
-        }
-      );
+      const { data, error: functionError } = await supabase
+        .rpc('verify_member_invitation' as any, { p_token: token });
 
       if (functionError) throw functionError;
 
