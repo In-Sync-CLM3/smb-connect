@@ -273,26 +273,39 @@ const AdminAnalytics = () => {
         .limit(10);
 
       if (associations) {
-        const associationsWithCounts = await Promise.all(
-          associations.map(async (assoc) => {
-            const { count: memberCount } = await supabase
-              .from('members')
-              .select('*', { count: 'exact', head: true })
-              .in('company_id', 
-                await supabase
-                  .from('companies')
-                  .select('id')
-                  .eq('association_id', assoc.id)
-                  .then(res => res.data?.map(c => c.id) || [])
-              );
+        // Batch fetch all companies for these associations
+        const assocIds = associations.map(a => a.id);
+        const { data: allCompanies } = await supabase
+          .from('companies')
+          .select('id, association_id')
+          .in('association_id', assocIds);
 
-            return {
-              name: assoc.name,
-              memberCount: memberCount || 0,
-              companyCount: assoc.companies?.[0]?.count || 0,
-            };
-          })
-        );
+        const companyIdsByAssoc: Record<string, string[]> = {};
+        (allCompanies || []).forEach(c => {
+          if (!companyIdsByAssoc[c.association_id]) companyIdsByAssoc[c.association_id] = [];
+          companyIdsByAssoc[c.association_id].push(c.id);
+        });
+
+        // Batch fetch all member counts grouped by company
+        const allCompanyIds = (allCompanies || []).map(c => c.id);
+        const { data: allMembers } = allCompanyIds.length > 0
+          ? await supabase.from('members').select('company_id').in('company_id', allCompanyIds).eq('is_active', true)
+          : { data: [] };
+
+        const memberCountByCompany: Record<string, number> = {};
+        (allMembers || []).forEach(m => {
+          memberCountByCompany[m.company_id] = (memberCountByCompany[m.company_id] || 0) + 1;
+        });
+
+        const associationsWithCounts = associations.map(assoc => {
+          const companyIds = companyIdsByAssoc[assoc.id] || [];
+          const memberCount = companyIds.reduce((sum, cid) => sum + (memberCountByCompany[cid] || 0), 0);
+          return {
+            name: assoc.name,
+            memberCount,
+            companyCount: assoc.companies?.[0]?.count || 0,
+          };
+        });
 
         setTopAssociations(
           associationsWithCounts

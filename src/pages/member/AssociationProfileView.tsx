@@ -251,23 +251,22 @@ export default function AssociationProfileView() {
         return acc;
       }, {});
 
-      const enriched = await Promise.all(
-        postsData.map(async (post: any) => {
-          const { data: likeData } = await supabase
-            .from("post_likes")
-            .select("id")
-            .eq("post_id", post.id)
-            .eq("user_id", currentUserId!)
-            .maybeSingle();
+      // Batch fetch likes for current user
+      const postIds = postsData.map((p: any) => p.id);
+      const { data: likesData } = await supabase
+        .from("post_likes")
+        .select("post_id")
+        .eq("user_id", currentUserId!)
+        .in("post_id", postIds);
 
-          return {
-            ...post,
-            profiles: profilesById[post.user_id] || null,
-            original_author: post.original_author_id ? profilesById[post.original_author_id] : null,
-            liked_by_user: !!likeData,
-          };
-        })
-      );
+      const likedPostIds = new Set(likesData?.map((l: any) => l.post_id) || []);
+
+      const enriched = postsData.map((post: any) => ({
+        ...post,
+        profiles: profilesById[post.user_id] || null,
+        original_author: post.original_author_id ? profilesById[post.original_author_id] : null,
+        liked_by_user: likedPostIds.has(post.id),
+      }));
 
       setPosts(enriched);
     } catch (e) {

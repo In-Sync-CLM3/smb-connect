@@ -83,22 +83,26 @@ export function EmailConversations({
 
       if (error) throw error;
 
-      // Get unread counts for each conversation
-      const conversationsWithUnread = await Promise.all(
-        (data || []).map(async (conv) => {
-          const { count } = await supabase
+      // Batch fetch unread counts - get all unread messages and count per conversation
+      const convIds = (data || []).map(c => c.id);
+      const { data: unreadMessages } = convIds.length > 0
+        ? await supabase
             .from('email_messages')
-            .select('*', { count: 'exact', head: true })
-            .eq('conversation_id', conv.id)
+            .select('conversation_id')
+            .in('conversation_id', convIds)
             .eq('is_read', false)
-            .eq('direction', 'inbound');
+            .eq('direction', 'inbound')
+        : { data: [] };
 
-          return {
-            ...conv,
-            unread_count: count || 0,
-          };
-        })
-      );
+      const unreadCountByConv: Record<string, number> = {};
+      (unreadMessages || []).forEach(msg => {
+        unreadCountByConv[msg.conversation_id] = (unreadCountByConv[msg.conversation_id] || 0) + 1;
+      });
+
+      const conversationsWithUnread = (data || []).map(conv => ({
+        ...conv,
+        unread_count: unreadCountByConv[conv.id] || 0,
+      }));
 
       setConversations(conversationsWithUnread);
     } catch (error) {

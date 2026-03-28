@@ -92,28 +92,32 @@ export default function SavedPosts() {
 
       const likedPostIds = new Set(likesData?.map(l => l.post_id) || []);
 
-      // Combine data
-      const savedPostsWithDetails = await Promise.all(
-        bookmarks.map(async (bookmark) => {
-          const post = postsData?.find(p => p.id === bookmark.post_id);
-          if (!post) return null;
+      // Batch fetch all profiles for post authors
+      const authorIds = Array.from(new Set((postsData || []).map(p => p.user_id)));
+      const { data: profilesData } = await supabase
+        .from('profiles')
+        .select('id, first_name, last_name, avatar, headline')
+        .in('id', authorIds);
 
-          const { data: profileData } = await supabase
-            .from('profiles')
-            .select('first_name, last_name, avatar, headline')
-            .eq('id', post.user_id)
-            .maybeSingle();
+      const profilesById = (profilesData || []).reduce((acc: Record<string, any>, p: any) => {
+        acc[p.id] = p;
+        return acc;
+      }, {} as Record<string, any>);
 
-          return {
-            id: bookmark.id,
-            post_id: bookmark.post_id,
-            created_at: bookmark.created_at,
-            post,
-            profile: profileData || { first_name: '', last_name: '', avatar: null, headline: null },
-            liked_by_user: likedPostIds.has(post.id),
-          };
-        })
-      );
+      // Combine data (no per-bookmark queries)
+      const savedPostsWithDetails = bookmarks.map(bookmark => {
+        const post = postsData?.find(p => p.id === bookmark.post_id);
+        if (!post) return null;
+
+        return {
+          id: bookmark.id,
+          post_id: bookmark.post_id,
+          created_at: bookmark.created_at,
+          post,
+          profile: profilesById[post.user_id] || { first_name: '', last_name: '', avatar: null, headline: null },
+          liked_by_user: likedPostIds.has(post.id),
+        };
+      });
 
       setSavedPosts(savedPostsWithDetails.filter(Boolean) as SavedPost[]);
     } catch (error: any) {

@@ -54,21 +54,22 @@ export function CommentsSection({ postId, currentUserId, onCommentAdded }: Comme
         return;
       }
 
-      // Load profile data for each comment
-      const commentsWithProfiles = await Promise.all(
-        commentsData.map(async (comment) => {
-          const { data: profileData } = await supabase
-            .from('profiles')
-            .select('first_name, last_name, avatar')
-            .eq('id', comment.user_id)
-            .maybeSingle();
+      // Batch fetch all profiles for commenters
+      const userIds = Array.from(new Set(commentsData.map(c => c.user_id)));
+      const { data: profilesData } = await supabase
+        .from('profiles')
+        .select('id, first_name, last_name, avatar')
+        .in('id', userIds);
 
-          return {
-            ...comment,
-            profile: profileData || { first_name: '', last_name: '', avatar: null }
-          };
-        })
-      );
+      const profilesById = (profilesData || []).reduce((acc: Record<string, any>, p: any) => {
+        acc[p.id] = p;
+        return acc;
+      }, {} as Record<string, any>);
+
+      const commentsWithProfiles = commentsData.map(comment => ({
+        ...comment,
+        profile: profilesById[comment.user_id] || { first_name: '', last_name: '', avatar: null },
+      }));
 
       setComments(commentsWithProfiles);
     } catch (error: any) {
