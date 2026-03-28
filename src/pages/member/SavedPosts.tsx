@@ -243,11 +243,14 @@ export default function SavedPosts() {
                         <MentionText text={post.content} className="mt-4" />
 
                         {post.image_url && (
-                          <img
-                            src={post.image_url}
-                            alt="Post"
-                            className="mt-4 rounded-lg max-h-96 w-full object-contain bg-gray-100"
-                          />
+                          <div className="mt-4 overflow-hidden rounded-lg bg-black/5">
+                            <img
+                              src={post.image_url}
+                              alt="Post"
+                              className="w-full object-cover"
+                              style={{ maxHeight: '516px' }}
+                            />
+                          </div>
                         )}
 
                         {post.video_url && (

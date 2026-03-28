@@ -335,9 +335,9 @@ export default function CompanyFeed() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const { validatePostImageUpload } = await import('@/lib/uploadValidation');
+    const { validatePostImageUpload, resizeImageForUpload } = await import('@/lib/uploadValidation');
     const validation = await validatePostImageUpload(file);
-    
+
     if (!validation.valid) {
       toast({
         title: 'Validation Error',
@@ -347,13 +347,16 @@ export default function CompanyFeed() {
       return;
     }
 
+    // Resize to LinkedIn-standard max 1200px before upload
+    const resizedFile = await resizeImageForUpload(file);
+
     setVideoFile(null);
     if (videoPreview) {
       URL.revokeObjectURL(videoPreview);
     }
     setVideoPreview(null);
 
-    setImageFile(file);
+    setImageFile(resizedFile);
     const reader = new FileReader();
     reader.onloadend = () => {
       setImagePreview(reader.result as string);
@@ -884,7 +887,7 @@ export default function CompanyFeed() {
                   />
                   {imagePreview && (
                     <div className="relative mb-4">
-                      <img src={imagePreview} alt="Preview" className="rounded-lg max-h-64 w-full object-cover" />
+                      <img src={imagePreview} alt="Preview" className="rounded-lg w-full object-cover" style={{ maxHeight: '516px' }} />
                       <Button
                         variant="destructive"
                         size="sm"
@@ -1095,17 +1098,20 @@ export default function CompanyFeed() {
                             </div>
                             <MentionText text={post.content} className="mt-3" />
                             {post.image_url && (
-                              <img 
-                                src={post.image_url} 
-                                alt="Post" 
-                                className="mt-3 rounded-lg max-h-96 w-full max-w-full object-contain bg-gray-100" 
-                              />
+                              <div className="mt-3 overflow-hidden rounded-lg bg-black/5">
+                                <img
+                                  src={post.image_url}
+                                  alt="Post"
+                                  className="w-full object-cover"
+                                  style={{ maxHeight: '516px' }}
+                                />
+                              </div>
                             )}
                             {post.video_url && (
-                              <video 
-                                src={post.video_url} 
+                              <video
+                                src={post.video_url}
                                 controls
-                                className="mt-3 rounded-lg max-h-96 w-full max-w-full" 
+                                className="mt-3 rounded-lg max-h-96 w-full max-w-full"
                               />
                             )}
                             {post.document_url && (

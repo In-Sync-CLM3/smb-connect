@@ -494,10 +494,10 @@ export default function MemberFeed() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Validate post image upload (10MB limit)
-    const { validatePostImageUpload } = await import('@/lib/uploadValidation');
+    // Validate post image upload (8MB limit)
+    const { validatePostImageUpload, resizeImageForUpload } = await import('@/lib/uploadValidation');
     const validation = await validatePostImageUpload(file);
-    
+
     if (!validation.valid) {
       toast({
         title: 'Validation Error',
@@ -507,6 +507,9 @@ export default function MemberFeed() {
       return;
     }
 
+    // Resize to LinkedIn-standard max 1200px before upload
+    const resizedFile = await resizeImageForUpload(file);
+
     // Clear video if selecting image
     setVideoFile(null);
     setVideoPreview(null);
@@ -514,7 +517,7 @@ export default function MemberFeed() {
       videoInputRef.current.value = '';
     }
 
-    setImageFile(file);
+    setImageFile(resizedFile);
     const reader = new FileReader();
     reader.onloadend = () => {
       setImagePreview(reader.result as string);
@@ -956,7 +959,8 @@ export default function MemberFeed() {
                 <img
                   src={imagePreview}
                   alt="Preview"
-                  className="rounded-lg max-h-64 w-full object-cover"
+                  className="rounded-lg w-full object-cover"
+                  style={{ maxHeight: '516px' }}
                 />
                 <Button
                   variant="destructive"
@@ -1210,11 +1214,14 @@ export default function MemberFeed() {
                         <MentionText text={post.content} className="mt-4" />
 
                         {post.image_url && (
-                          <img
-                            src={post.image_url}
-                            alt="Post"
-                            className="mt-4 rounded-lg max-h-96 w-full max-w-full object-contain bg-gray-100"
-                          />
+                          <div className="mt-4 overflow-hidden rounded-lg bg-black/5">
+                            <img
+                              src={post.image_url}
+                              alt="Post"
+                              className="w-full object-cover"
+                              style={{ maxHeight: '516px' }}
+                            />
+                          </div>
                         )}
 
                         {post.video_url && (

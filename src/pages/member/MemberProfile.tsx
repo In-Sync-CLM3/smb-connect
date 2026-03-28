@@ -983,7 +983,7 @@ export default function MemberProfile() {
         <Card className="overflow-hidden mb-6">
           <div className="relative">
             {/* Cover Image */}
-            <div className="h-48 bg-gradient-to-r from-primary/20 to-primary/10 relative">
+            <div className="h-[128px] md:h-[200px] bg-gradient-to-r from-primary/20 to-primary/10 relative">
               {profile.cover_image && (
                 <img
                   src={profile.cover_image}
@@ -1257,11 +1257,14 @@ export default function MemberProfile() {
 
                     {/* Post Media */}
                     {post.image_url && (
-                      <img
-                        src={post.image_url}
-                        alt="Post"
-                        className="rounded-lg max-h-96 w-full object-contain bg-gray-100 mb-4"
-                      />
+                      <div className="overflow-hidden rounded-lg bg-black/5 mb-4">
+                        <img
+                          src={post.image_url}
+                          alt="Post"
+                          className="w-full object-cover"
+                          style={{ maxHeight: '516px' }}
+                        />
+                      </div>
                     )}
                     {post.video_url && (
                       <video
@@ -1398,11 +1401,14 @@ export default function MemberProfile() {
 
                         {/* Post Media */}
                         {post.image_url && (
-                          <img
-                            src={post.image_url}
-                            alt="Post"
-                            className="rounded-lg max-h-96 w-full object-contain bg-gray-100 mb-4"
-                          />
+                          <div className="overflow-hidden rounded-lg bg-black/5 mb-4">
+                            <img
+                              src={post.image_url}
+                              alt="Post"
+                              className="w-full object-cover"
+                              style={{ maxHeight: '516px' }}
+                            />
+                          </div>
                         )}
                         {post.video_url && (
                           <video

@@ -407,7 +407,7 @@ export default function AssociationProfileView() {
         {/* Profile Header Card */}
         <Card className="mb-6 overflow-hidden">
           {/* Cover Banner */}
-          <div className="h-32 md:h-40 relative overflow-hidden">
+          <div className="h-[128px] md:h-[200px] relative overflow-hidden">
             {association.cover_image ? (
               <img src={association.cover_image} alt="Cover" className="w-full h-full object-cover" />
             ) : (
@@ -526,7 +526,9 @@ export default function AssociationProfileView() {
                           </p>
                           <MentionText text={post.content} className="mt-3" />
                           {post.image_url && (
-                            <img src={post.image_url} alt="Post" className="mt-3 rounded-lg max-h-96 w-full max-w-full object-contain bg-muted" />
+                            <div className="mt-3 overflow-hidden rounded-lg bg-black/5">
+                              <img src={post.image_url} alt="Post" className="w-full object-cover" style={{ maxHeight: '516px' }} />
+                            </div>
                           )}
                           {post.video_url && (
                             <video src={post.video_url} controls className="mt-3 rounded-lg max-h-96 w-full max-w-full" />

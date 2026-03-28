@@ -220,6 +220,82 @@ export const validatePostImageDimensions = (file: File): Promise<ValidationResul
 };
 
 /**
+ * Resize image to LinkedIn-standard dimensions before upload.
+ * Max width: 1200px, max height: 1200px, maintains aspect ratio.
+ * Outputs JPEG at 85% quality for optimal size/quality balance.
+ * Returns the original file if it's already within limits.
+ */
+export const resizeImageForUpload = (
+  file: File,
+  maxWidth: number = 1200,
+  maxHeight: number = 1200,
+  quality: number = 0.85
+): Promise<File> => {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+
+      // If already within limits, return original
+      if (img.width <= maxWidth && img.height <= maxHeight) {
+        resolve(file);
+        return;
+      }
+
+      // Calculate new dimensions maintaining aspect ratio
+      let newWidth = img.width;
+      let newHeight = img.height;
+
+      if (newWidth > maxWidth) {
+        newHeight = Math.round((newHeight * maxWidth) / newWidth);
+        newWidth = maxWidth;
+      }
+      if (newHeight > maxHeight) {
+        newWidth = Math.round((newWidth * maxHeight) / newHeight);
+        newHeight = maxHeight;
+      }
+
+      const canvas = document.createElement('canvas');
+      canvas.width = newWidth;
+      canvas.height = newHeight;
+
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        resolve(file); // Fallback to original if canvas fails
+        return;
+      }
+
+      ctx.drawImage(img, 0, 0, newWidth, newHeight);
+
+      canvas.toBlob(
+        (blob) => {
+          if (!blob) {
+            resolve(file);
+            return;
+          }
+          const resizedFile = new File([blob], file.name, {
+            type: 'image/jpeg',
+            lastModified: Date.now(),
+          });
+          resolve(resizedFile);
+        },
+        'image/jpeg',
+        quality
+      );
+    };
+
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error('Failed to load image for resizing'));
+    };
+
+    img.src = url;
+  });
+};
+
+/**
  * Complete validation for post image uploads (8MB limit, specific dimensions)
  */
 export const validatePostImageUpload = async (file: File): Promise<ValidationResult> => {
