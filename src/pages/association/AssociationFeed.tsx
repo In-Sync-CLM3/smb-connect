@@ -105,7 +105,9 @@ export default function AssociationFeed() {
   const videoInputRef = useRef<HTMLInputElement>(null);
   const documentInputRef = useRef<HTMLInputElement>(null);
   const [documentFile, setDocumentFile] = useState<File | null>(null);
-  
+  const userIdRef = useRef<string | null>(null);
+  const assocIdRef = useRef<string | null>(null);
+
   const { unreadCount: unreadMessageCount } = useUnreadMessageCount(currentUserId);
 
   // Reset to posts tab when navigating back to feed via mobile nav
@@ -114,17 +116,37 @@ export default function AssociationFeed() {
     if (state?.resetTab) {
       setActiveTab('posts');
       loadPosts();
-      // Clear the state to prevent re-triggering
       window.history.replaceState({}, '');
     }
   }, [location.state]);
 
+  // Single initialization: get session once, eliminate waterfall
   useEffect(() => {
-    loadCurrentUser();
-    loadProfile();
-    loadAssociationInfo();
-    loadPendingConnectionsCount();
-    
+    const init = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user;
+      if (!user) { setLoading(false); return; }
+
+      userIdRef.current = user.id;
+      setCurrentUserId(user.id);
+
+      // Profile + pending count run in background (don't block posts)
+      loadProfile(user.id);
+      loadPendingConnectionsCount(user.id);
+
+      // Resolve association info, then load posts immediately (no second useEffect)
+      const assocInfo = await resolveAssociationInfo(user.id);
+      if (assocInfo) {
+        assocIdRef.current = assocInfo.id;
+        setAssociationInfo(assocInfo);
+        loadPosts(user.id, assocInfo.id);
+      } else {
+        setLoading(false);
+      }
+    };
+
+    init();
+
     const connectionsChannel = supabase
       .channel('connections-changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'connections' }, () => {
@@ -137,102 +159,74 @@ export default function AssociationFeed() {
     };
   }, [selectedAssociationId]);
 
-  // Load posts when association info is available
+  // Realtime subscription for posts (re-subscribes when assocId changes)
   useEffect(() => {
-    if (associationInfo?.id) {
-      loadPosts();
-      
-      const channel = supabase
-        .channel('posts-changes')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'posts' }, (payload) => {
-          if (payload.eventType === 'UPDATE') {
-            setPosts(prev => prev.map(post => 
-              post.id === payload.new.id 
-                ? { 
-                    ...post, 
-                    likes_count: payload.new.likes_count ?? post.likes_count,
-                    comments_count: payload.new.comments_count ?? post.comments_count,
-                    shares_count: payload.new.shares_count ?? post.shares_count,
-                    reposts_count: payload.new.reposts_count ?? post.reposts_count
-                  } 
-                : post
-            ));
-          } else {
-            loadPosts();
-          }
-        })
-        .subscribe();
+    if (!associationInfo?.id) return;
 
-      return () => {
-        supabase.removeChannel(channel);
-      };
-    }
+    const channel = supabase
+      .channel('posts-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'posts' }, (payload) => {
+        if (payload.eventType === 'UPDATE') {
+          setPosts(prev => prev.map(post =>
+            post.id === payload.new.id
+              ? {
+                  ...post,
+                  likes_count: payload.new.likes_count ?? post.likes_count,
+                  comments_count: payload.new.comments_count ?? post.comments_count,
+                  shares_count: payload.new.shares_count ?? post.shares_count,
+                  reposts_count: payload.new.reposts_count ?? post.reposts_count
+                }
+              : post
+          ));
+        } else {
+          loadPosts();
+        }
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [associationInfo?.id]);
 
-  const loadCurrentUser = async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-      const user = session?.user;
-    if (user) {
-      setCurrentUserId(user.id);
-    }
-  };
-
-  const loadProfile = async () => {
+  const loadProfile = async (userId?: string) => {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const user = session?.user;
-      if (!user) return;
+      const uid = userId || userIdRef.current;
+      if (!uid) return;
 
       const { data: profileData } = await supabase
         .from('profiles')
         .select('*')
-        .eq('id', user.id)
+        .eq('id', uid)
         .maybeSingle();
 
-      if (profileData) {
-        setProfile(profileData);
-      }
+      if (profileData) setProfile(profileData);
     } catch (error) {
       console.error('Error loading profile:', error);
     }
   };
 
-  const loadAssociationInfo = async () => {
+  // Resolves association info with parallelized counts. Returns the info object.
+  const resolveAssociationInfo = async (userId: string): Promise<AssociationInfo | null> => {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const user = session?.user;
-      if (!user) {
-        console.warn('loadAssociationInfo: No authenticated user');
-        return;
-      }
-      console.log('loadAssociationInfo: user.id =', user.id);
+      let associationId: string | null = selectedAssociationId || null;
 
-      let associationId: string | null = null;
-
-      // Priority 1: Use selectedAssociationId from RoleContext
-      if (selectedAssociationId) {
-        associationId = selectedAssociationId;
-        console.log('loadAssociationInfo: using selectedAssociationId from RoleContext:', associationId);
-      } else {
-        // Fallback: association_managers table
-        const { data: managerData, error: managerError } = await supabase
+      if (!associationId) {
+        const { data: managerData } = await supabase
           .from('association_managers')
           .select('association_id')
-          .eq('user_id', user.id)
+          .eq('user_id', userId)
           .eq('is_active', true)
           .limit(1)
           .maybeSingle();
 
-        console.log('loadAssociationInfo: managerData =', managerData, 'error =', managerError);
-
         if (managerData?.association_id) {
           associationId = managerData.association_id;
         } else {
-          // Fallback for admin users
           const { data: adminData } = await supabase
             .from('admin_users')
             .select('id')
-            .eq('user_id', user.id)
+            .eq('user_id', userId)
             .eq('is_active', true)
             .maybeSingle();
 
@@ -245,80 +239,57 @@ export default function AssociationFeed() {
               .limit(1)
               .maybeSingle();
 
-            if (firstAssoc) {
-              associationId = firstAssoc.id;
-            }
+            if (firstAssoc) associationId = firstAssoc.id;
           }
         }
       }
 
-      console.log('loadAssociationInfo: resolved associationId =', associationId);
+      if (!associationId) return null;
 
-      if (associationId) {
-        const { data: associationData } = await supabase
-          .from('associations')
-          .select('*')
-          .eq('id', associationId)
-          .maybeSingle();
+      // Fetch association data + companies in parallel (need company IDs for member count)
+      const [assocRes, companiesRes] = await Promise.all([
+        supabase.from('associations').select('*').eq('id', associationId).maybeSingle(),
+        supabase.from('companies').select('id').eq('association_id', associationId).eq('is_active', true),
+      ]);
 
-        if (associationData) {
-          // Get company count
-          const { count: companyCount } = await supabase
-            .from('companies')
-            .select('*', { count: 'exact', head: true })
-            .eq('association_id', associationData.id)
-            .eq('is_active', true);
+      const associationData = assocRes.data;
+      if (!associationData) return null;
 
-          // Get member count through companies
-          const { data: companies } = await supabase
-            .from('companies')
-            .select('id')
-            .eq('association_id', associationData.id)
-            .eq('is_active', true);
-
-          let memberCount = 0;
-          if (companies && companies.length > 0) {
-            const companyIds = companies.map(c => c.id);
-            const { count } = await supabase
-              .from('members')
-              .select('*', { count: 'exact', head: true })
-              .in('company_id', companyIds)
-              .eq('is_active', true);
-            memberCount = count || 0;
-          }
-
-          console.log('loadAssociationInfo: SUCCESS, setting association:', associationData.name);
-          setAssociationInfo({
-            ...associationData,
-            company_count: companyCount || 0,
-            member_count: memberCount
-          });
-        } else {
-          console.warn('Association not found for id:', associationId);
-        }
-      } else {
-        console.warn('No association found for user:', user.id, '- user is not an association manager or admin');
+      const companyIds = (companiesRes.data || []).map(c => c.id);
+      let memberCount = 0;
+      if (companyIds.length > 0) {
+        const { count } = await supabase
+          .from('members')
+          .select('*', { count: 'exact', head: true })
+          .in('company_id', companyIds)
+          .eq('is_active', true);
+        memberCount = count || 0;
       }
+
+      return {
+        ...associationData,
+        company_count: companyIds.length,
+        member_count: memberCount,
+      };
     } catch (error) {
       console.error('Error loading association info:', error);
+      return null;
     }
   };
 
-  const loadPendingConnectionsCount = async () => {
+  const loadPendingConnectionsCount = async (userId?: string) => {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const user = session?.user;
-      if (!user) return;
+      const uid = userId || userIdRef.current;
+      if (!uid) return;
 
       const { data: memberRows } = await supabase
         .from('members')
         .select('id')
-        .eq('user_id', user.id)
+        .eq('user_id', uid)
         .eq('is_active', true)
         .limit(1);
 
       const memberData = memberRows?.[0] || null;
-
       if (!memberData) return;
 
       const { count } = await supabase
@@ -333,26 +304,23 @@ export default function AssociationFeed() {
     }
   };
 
-  const loadPosts = async () => {
+  const loadPosts = async (userId?: string, associationId?: string) => {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const user = session?.user;
-      if (!user) return;
+      const uid = userId || userIdRef.current;
+      const aid = associationId || assocIdRef.current || associationInfo?.id;
+      if (!uid) return;
 
-      // Only load posts for this specific association
       const query = supabase
         .from('posts')
         .select('*')
         .order('created_at', { ascending: false })
         .limit(50);
 
-      // Filter by association if we have the info
-      if (associationInfo?.id) {
-        query.eq('post_context', 'association').eq('organization_id', associationInfo.id);
+      if (aid) {
+        query.eq('post_context', 'association').eq('organization_id', aid);
       }
 
       const { data: postsData, error } = await query;
-
       if (error) throw error;
 
       if (postsData && postsData.length > 0) {
@@ -361,11 +329,10 @@ export default function AssociationFeed() {
         const allUserIds = Array.from(new Set([...userIds, ...originalAuthorIds]));
         const postIds = postsData.map((p: any) => p.id);
 
-        // Parallel fetch: profiles, members, likes (3 independent queries)
         const [profilesRes, membersRes, likesRes] = await Promise.all([
           supabase.from('profiles').select('id, first_name, last_name, avatar').in('id', allUserIds),
           supabase.from('members').select('user_id, company_id, companies (name)').in('user_id', userIds).eq('is_active', true),
-          supabase.from('post_likes').select('post_id').eq('user_id', user.id).in('post_id', postIds),
+          supabase.from('post_likes').select('post_id').eq('user_id', uid).in('post_id', postIds),
         ]);
 
         const profilesById = (profilesRes.data || []).reduce((acc: Record<string, any>, profile: any) => {

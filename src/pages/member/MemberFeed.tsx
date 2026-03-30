@@ -118,54 +118,56 @@ export default function MemberFeed() {
   
   // Unread message count for desktop header badge
   const { unreadCount: unreadMessageCount } = useUnreadMessageCount(currentUserId);
+  const userIdRef = useRef<string | null>(null);
 
+  // Single initialization: get session once, run all loads in parallel
   useEffect(() => {
-    loadProfile();
-    loadPosts();
-    loadPendingConnectionsCount();
+    const init = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user;
+      if (!user) { setLoading(false); return; }
 
-    // Set up real-time subscription for posts (INSERT, UPDATE, DELETE)
+      userIdRef.current = user.id;
+      setCurrentUserId(user.id);
+
+      // All three are independent — run in parallel
+      loadProfile(user.id);
+      loadPosts(user.id);
+      loadPendingConnectionsCount(user.id);
+    };
+
+    init();
+
     const channel = supabase
       .channel('posts-changes')
       .on(
         'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'posts'
-        },
+        { event: '*', schema: 'public', table: 'posts' },
         (payload) => {
           if (payload.eventType === 'UPDATE') {
-            // Update post counts in place without full reload
-            setPosts(prev => prev.map(post => 
-              post.id === payload.new.id 
-                ? { 
-                    ...post, 
+            setPosts(prev => prev.map(post =>
+              post.id === payload.new.id
+                ? {
+                    ...post,
                     likes_count: payload.new.likes_count ?? post.likes_count,
                     comments_count: payload.new.comments_count ?? post.comments_count,
                     shares_count: payload.new.shares_count ?? post.shares_count,
                     reposts_count: payload.new.reposts_count ?? post.reposts_count
-                  } 
+                  }
                 : post
             ));
           } else {
-            // For INSERT and DELETE, reload all posts
             loadPosts();
           }
         }
       )
       .subscribe();
 
-    // Set up real-time subscription for connections
     const connectionsChannel = supabase
       .channel('connections-changes')
       .on(
         'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'connections'
-        },
+        { event: '*', schema: 'public', table: 'connections' },
         () => {
           loadPendingConnectionsCount();
         }
@@ -178,24 +180,21 @@ export default function MemberFeed() {
     };
   }, []);
 
-  const loadPendingConnectionsCount = async () => {
+  const loadPendingConnectionsCount = async (userId?: string) => {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const user = session?.user;
-      if (!user) return;
+      const uid = userId || userIdRef.current;
+      if (!uid) return;
 
-      // Get the current user's member ID (use limit(1) to handle duplicate member records)
       const { data: memberDataArr } = await supabase
         .from('members')
         .select('id')
-        .eq('user_id', user.id)
+        .eq('user_id', uid)
         .eq('is_active', true)
         .limit(1);
       const memberData = memberDataArr?.[0] || null;
 
       if (!memberData) return;
 
-      // Count pending connection requests where user is the receiver
       const { count } = await supabase
         .from('connections')
         .select('*', { count: 'exact', head: true })
@@ -208,51 +207,28 @@ export default function MemberFeed() {
     }
   };
 
-  const loadProfile = async () => {
+  const loadProfile = async (userId?: string) => {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const user = session?.user;
-      if (!user) return;
+      const uid = userId || userIdRef.current;
+      if (!uid) return;
 
-      setCurrentUserId(user.id);
+      // Fetch profile + both association lookups in parallel
+      const [profileRes, managerRes, memberRes] = await Promise.all([
+        supabase.from('profiles').select('*').eq('id', uid).maybeSingle(),
+        supabase.from('association_managers').select('association_id').eq('user_id', uid).eq('is_active', true),
+        supabase.from('members').select('company_id, companies!inner(association_id)').eq('user_id', uid).eq('is_active', true),
+      ]);
 
-      const { data: profileData } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', user.id)
-        .maybeSingle();
+      if (profileRes.data) setProfile(profileRes.data);
 
-      if (profileData) {
-        setProfile(profileData);
-      }
-
-      // Load user's associations
+      // Collect association IDs from both sources
       const associationIds = new Set<string>();
-      
-      // Get associations where user is a manager
-      const { data: managerData } = await supabase
-        .from('association_managers')
-        .select('association_id')
-        .eq('user_id', user.id)
-        .eq('is_active', true);
-      
-      managerData?.forEach(m => associationIds.add(m.association_id));
-
-      // Get associations through company membership
-      const { data: memberData } = await supabase
-        .from('members')
-        .select('company_id, companies!inner(association_id)')
-        .eq('user_id', user.id)
-        .eq('is_active', true);
-
-      memberData?.forEach(m => {
+      managerRes.data?.forEach(m => associationIds.add(m.association_id));
+      memberRes.data?.forEach(m => {
         const company = m.companies as any;
-        if (company?.association_id) {
-          associationIds.add(company.association_id);
-        }
+        if (company?.association_id) associationIds.add(company.association_id);
       });
 
-      // Fetch association details
       if (associationIds.size > 0) {
         const { data: associationsData } = await supabase
           .from('associations')
@@ -260,7 +236,6 @@ export default function MemberFeed() {
           .in('id', Array.from(associationIds))
           .eq('is_active', true)
           .order('name');
-        
         setAssociations(associationsData || []);
       }
     } catch (error: any) {
@@ -268,11 +243,11 @@ export default function MemberFeed() {
     }
   };
 
-  const loadPosts = async () => {
+  const loadPosts = async (userId?: string) => {
     try {
       setLoading(true);
-      const { data: { session } } = await supabase.auth.getSession();
-      const user = session?.user;
+      const uid = userId || userIdRef.current;
+      if (!uid) return;
 
       // Load member + association posts
       const { data: postsData, error } = await supabase
@@ -308,9 +283,7 @@ export default function MemberFeed() {
           ? supabase.from('associations').select('id, name, logo').in('id', orgIds)
           : Promise.resolve({ data: [] as any[] }),
         supabase.from('members').select('user_id, company:companies(name)').in('user_id', userIds).eq('is_active', true),
-        user
-          ? supabase.from('post_likes').select('post_id').eq('user_id', user.id).in('post_id', postIds)
-          : Promise.resolve({ data: [] as any[] }),
+        supabase.from('post_likes').select('post_id').eq('user_id', uid).in('post_id', postIds),
       ]);
 
       const profilesById = (profilesRes.data || []).reduce((acc: Record<string, any>, profile: any) => {

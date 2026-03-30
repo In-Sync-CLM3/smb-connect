@@ -99,15 +99,38 @@ export default function CompanyFeed() {
   const videoInputRef = useRef<HTMLInputElement>(null);
   const documentInputRef = useRef<HTMLInputElement>(null);
   const [documentFile, setDocumentFile] = useState<File | null>(null);
-  
+  const userIdRef = useRef<string | null>(null);
+  const companyIdRef = useRef<string | null>(null);
+
   const { unreadCount: unreadMessageCount } = useUnreadMessageCount(currentUserId);
 
+  // Single initialization: get session once, eliminate waterfall
   useEffect(() => {
-    loadCurrentUser();
-    loadProfile();
-    loadCompanyInfo();
-    loadPendingConnectionsCount();
-    
+    const init = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user;
+      if (!user) { setLoading(false); return; }
+
+      userIdRef.current = user.id;
+      setCurrentUserId(user.id);
+
+      // Profile + pending count run in background (don't block posts)
+      loadProfile(user.id);
+      loadPendingConnectionsCount(user.id);
+
+      // Resolve company info, then load posts immediately (no second useEffect)
+      const compInfo = await resolveCompanyInfo(user.id);
+      if (compInfo) {
+        companyIdRef.current = compInfo.id;
+        setCompanyInfo(compInfo);
+        loadPosts(user.id, compInfo.id);
+      } else {
+        setLoading(false);
+      }
+    };
+
+    init();
+
     const connectionsChannel = supabase
       .channel('connections-changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'connections' }, () => {
@@ -120,121 +143,96 @@ export default function CompanyFeed() {
     };
   }, []);
 
-  // Load posts when company info is available
+  // Realtime subscription for posts (re-subscribes when companyId changes)
   useEffect(() => {
-    if (companyInfo?.id) {
-      loadPosts();
-      
-      const channel = supabase
-        .channel('posts-changes')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'posts' }, (payload) => {
-          if (payload.eventType === 'UPDATE') {
-            setPosts(prev => prev.map(post => 
-              post.id === payload.new.id 
-                ? { 
-                    ...post, 
-                    likes_count: payload.new.likes_count ?? post.likes_count,
-                    comments_count: payload.new.comments_count ?? post.comments_count,
-                    shares_count: payload.new.shares_count ?? post.shares_count,
-                    reposts_count: payload.new.reposts_count ?? post.reposts_count
-                  } 
-                : post
-            ));
-          } else {
-            loadPosts();
-          }
-        })
-        .subscribe();
+    if (!companyInfo?.id) return;
 
-      return () => {
-        supabase.removeChannel(channel);
-      };
-    }
+    const channel = supabase
+      .channel('posts-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'posts' }, (payload) => {
+        if (payload.eventType === 'UPDATE') {
+          setPosts(prev => prev.map(post =>
+            post.id === payload.new.id
+              ? {
+                  ...post,
+                  likes_count: payload.new.likes_count ?? post.likes_count,
+                  comments_count: payload.new.comments_count ?? post.comments_count,
+                  shares_count: payload.new.shares_count ?? post.shares_count,
+                  reposts_count: payload.new.reposts_count ?? post.reposts_count
+                }
+              : post
+          ));
+        } else {
+          loadPosts();
+        }
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [companyInfo?.id]);
 
-  const loadCurrentUser = async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-      const user = session?.user;
-    if (user) {
-      setCurrentUserId(user.id);
-    }
-  };
-
-  const loadProfile = async () => {
+  const loadProfile = async (userId?: string) => {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const user = session?.user;
-      if (!user) return;
+      const uid = userId || userIdRef.current;
+      if (!uid) return;
 
       const { data: profileData } = await supabase
         .from('profiles')
         .select('*')
-        .eq('id', user.id)
+        .eq('id', uid)
         .maybeSingle();
 
-      if (profileData) {
-        setProfile(profileData);
-      }
+      if (profileData) setProfile(profileData);
     } catch (error) {
       console.error('Error loading profile:', error);
     }
   };
 
-  const loadCompanyInfo = async () => {
+  // Resolves company info with parallelized data + member count. Returns the info object.
+  const resolveCompanyInfo = async (userId: string) => {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const user = session?.user;
-      if (!user) return;
-
-      // Get company where user is an admin
       const { data: adminData } = await supabase
         .from('company_admins')
         .select('company_id')
-        .eq('user_id', user.id)
+        .eq('user_id', userId)
         .eq('is_active', true)
         .maybeSingle();
 
-      if (adminData?.company_id) {
-        const { data: companyData } = await supabase
-          .from('companies')
-          .select('*')
-          .eq('id', adminData.company_id)
-          .maybeSingle();
+      if (!adminData?.company_id) return null;
 
-        if (companyData) {
-          // Get member count
-          const { count: memberCount } = await supabase
-            .from('members')
-            .select('*', { count: 'exact', head: true })
-            .eq('company_id', companyData.id)
-            .eq('is_active', true);
+      // Fetch company data + member count in parallel
+      const [companyRes, memberCountRes] = await Promise.all([
+        supabase.from('companies').select('*').eq('id', adminData.company_id).maybeSingle(),
+        supabase.from('members').select('*', { count: 'exact', head: true }).eq('company_id', adminData.company_id).eq('is_active', true),
+      ]);
 
-          setCompanyInfo({
-            ...companyData,
-            member_count: memberCount || 0
-          });
-        }
-      }
+      if (!companyRes.data) return null;
+
+      return {
+        ...companyRes.data,
+        member_count: memberCountRes.count || 0,
+      };
     } catch (error) {
       console.error('Error loading company info:', error);
+      return null;
     }
   };
 
-  const loadPendingConnectionsCount = async () => {
+  const loadPendingConnectionsCount = async (userId?: string) => {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const user = session?.user;
-      if (!user) return;
+      const uid = userId || userIdRef.current;
+      if (!uid) return;
 
       const { data: memberRows } = await supabase
         .from('members')
         .select('id')
-        .eq('user_id', user.id)
+        .eq('user_id', uid)
         .eq('is_active', true)
         .limit(1);
 
       const memberData = memberRows?.[0] || null;
-
       if (!memberData) return;
 
       const { count } = await supabase
@@ -249,26 +247,23 @@ export default function CompanyFeed() {
     }
   };
 
-  const loadPosts = async () => {
+  const loadPosts = async (userId?: string, companyId?: string) => {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const user = session?.user;
-      if (!user) return;
+      const uid = userId || userIdRef.current;
+      const cid = companyId || companyIdRef.current || companyInfo?.id;
+      if (!uid) return;
 
-      // Only load posts for this specific company
       const query = supabase
         .from('posts')
         .select('*')
         .order('created_at', { ascending: false })
         .limit(50);
 
-      // Filter by company if we have the info
-      if (companyInfo?.id) {
-        query.eq('post_context', 'company').eq('organization_id', companyInfo.id);
+      if (cid) {
+        query.eq('post_context', 'company').eq('organization_id', cid);
       }
 
       const { data: postsData, error } = await query;
-
       if (error) throw error;
 
       if (postsData && postsData.length > 0) {
@@ -277,11 +272,10 @@ export default function CompanyFeed() {
         const allUserIds = Array.from(new Set([...userIds, ...originalAuthorIds]));
         const postIds = postsData.map((p: any) => p.id);
 
-        // Parallel fetch: profiles, members, likes (3 independent queries)
         const [profilesRes, membersRes, likesRes] = await Promise.all([
           supabase.from('profiles').select('id, first_name, last_name, avatar').in('id', allUserIds),
           supabase.from('members').select('user_id, company_id, companies (name)').in('user_id', userIds).eq('is_active', true),
-          supabase.from('post_likes').select('post_id').eq('user_id', user.id).in('post_id', postIds),
+          supabase.from('post_likes').select('post_id').eq('user_id', uid).in('post_id', postIds),
         ]);
 
         const profilesById = (profilesRes.data || []).reduce((acc: Record<string, any>, profile: any) => {
