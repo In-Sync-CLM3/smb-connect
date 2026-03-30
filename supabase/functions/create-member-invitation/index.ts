@@ -7,14 +7,14 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Generate cryptographically secure 64-character hex token
+// Generate cryptographically secure 64-character hex token (bulk path only)
 function generateToken(): string {
   const array = new Uint8Array(32);
   crypto.getRandomValues(array);
   return Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('');
 }
 
-// SHA-256 hash for secure token storage
+// SHA-256 hash for secure token storage (bulk path only)
 async function hashToken(token: string): Promise<string> {
   const encoder = new TextEncoder();
   const data = encoder.encode(token);
@@ -22,6 +22,59 @@ async function hashToken(token: string): Promise<string> {
   return Array.from(new Uint8Array(hashBuffer))
     .map(b => b.toString(16).padStart(2, '0'))
     .join('');
+}
+
+function buildInvitationEmailHtml(
+  firstName: string,
+  organizationName: string,
+  registrationUrl: string,
+  role: string,
+  designation?: string | null,
+  department?: string | null,
+): string {
+  return `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <style>
+          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+          .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; text-align: center; border-radius: 8px 8px 0 0; }
+          .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 8px 8px; }
+          .button { display: inline-block; background: #667eea; color: white; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-weight: bold; margin: 20px 0; }
+          .info-box { background: white; padding: 15px; border-left: 4px solid #667eea; margin: 20px 0; }
+          .footer { text-align: center; margin-top: 30px; color: #888; font-size: 12px; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1>🎉 You're Invited!</h1>
+          </div>
+          <div class="content">
+            <p>Hello${firstName ? ' ' + firstName : ''},</p>
+            <p>You've been invited to join <strong>${organizationName}</strong> on SMB Connect!</p>
+            <div class="info-box">
+              <p><strong>Role:</strong> ${(role || 'member').charAt(0).toUpperCase() + (role || 'member').slice(1)}</p>
+              ${designation ? `<p><strong>Designation:</strong> ${designation}</p>` : ''}
+              ${department ? `<p><strong>Department:</strong> ${department}</p>` : ''}
+            </div>
+            <p>Click the button below to complete your registration. This invitation expires in <strong>48 hours</strong>.</p>
+            <div style="text-align: center;">
+              <a href="${registrationUrl}" class="button">Complete Registration</a>
+            </div>
+            <p style="margin-top: 30px; font-size: 12px; color: #666;">
+              If the button doesn't work, copy and paste this link into your browser:<br>
+              <a href="${registrationUrl}">${registrationUrl}</a>
+            </p>
+          </div>
+          <div class="footer">
+            <p>© 2025 SMB Connect. All rights reserved.</p>
+          </div>
+        </div>
+      </body>
+    </html>
+  `;
 }
 
 const handler = async (req: Request): Promise<Response> => {
@@ -46,12 +99,10 @@ const handler = async (req: Request): Promise<Response> => {
     // Verify user authentication
     const token = authHeader.replace('Bearer ', '');
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-    
+
     if (authError || !user) {
       throw new Error('Unauthorized');
     }
-
-    console.log('Creating invitation for user:', user.id);
 
     const body = await req.json();
     const {
@@ -69,81 +120,36 @@ const handler = async (req: Request): Promise<Response> => {
     // Check if this is a bulk invitation request
     const isBulk = Array.isArray(invitations);
 
+    // ================================================================
+    // BULK INVITATION PATH (permission check done here, inserts done here)
+    // ================================================================
     if (isBulk) {
-      console.log(`Processing bulk invitation request with ${invitations.length} invitations`);
-    } else {
-      // Validate required fields for single invitation
-      if (!email || !organization_id || !organization_type || !role) {
-        throw new Error('Missing required fields: email, organization_id, organization_type, role');
+      // Verify user has permission to invite to this organization
+      if (organization_type === 'company') {
+        const { data: memberCheck } = await supabase
+          .from('members')
+          .select('role')
+          .eq('user_id', user.id)
+          .eq('company_id', organization_id)
+          .in('role', ['owner', 'admin'])
+          .single();
+
+        if (!memberCheck) {
+          throw new Error('Unauthorized: User cannot invite to this company');
+        }
+      } else if (organization_type === 'association') {
+        const { data: managerCheck } = await supabase
+          .from('association_managers')
+          .select('id')
+          .eq('user_id', user.id)
+          .eq('association_id', organization_id)
+          .single();
+
+        if (!managerCheck) {
+          throw new Error('Unauthorized: User cannot invite to this association');
+        }
       }
 
-      // Validate name fields (required by database)
-      if (!first_name || !last_name) {
-        throw new Error('Missing required fields: first_name, last_name');
-      }
-
-      console.log('Creating invitation with data:', {
-        email,
-        first_name,
-        last_name,
-        organization_id,
-        organization_type,
-        role
-      });
-    }
-
-    // Verify user has permission to invite to this organization
-    if (organization_type === 'company') {
-      const { data: memberCheck, error: memberError } = await supabase
-        .from('members')
-        .select('role')
-        .eq('user_id', user.id)
-        .eq('company_id', organization_id)
-        .in('role', ['owner', 'admin'])
-        .single();
-
-      if (memberError) {
-        console.error('Error checking company membership:', memberError);
-      }
-
-      if (!memberCheck) {
-        throw new Error('Unauthorized: User cannot invite to this company');
-      }
-    } else if (organization_type === 'association') {
-      const { data: managerCheck, error: managerError } = await supabase
-        .from('association_managers')
-        .select('id')
-        .eq('user_id', user.id)
-        .eq('association_id', organization_id)
-        .single();
-
-      if (managerError) {
-        console.error('Error checking association management:', managerError);
-      }
-
-      if (!managerCheck) {
-        throw new Error('Unauthorized: User cannot invite to this association');
-      }
-    }
-
-    // Rate limiting: Only apply to single invitations, not bulk
-    if (!isBulk) {
-      const oneMinuteAgo = new Date(Date.now() - 60000).toISOString();
-      const { count } = await supabase
-        .from('member_invitations')
-        .select('*', { count: 'exact', head: true })
-        .eq('invited_by', user.id)
-        .gte('created_at', oneMinuteAgo);
-
-      if (count && count >= 5) {
-        throw new Error('Rate limit exceeded: Maximum 5 invitations per minute');
-      }
-    }
-
-    // Handle bulk invitations
-    if (isBulk) {
-      console.log(`Processing ${invitations.length} bulk invitations`);
-      
       const results = {
         successful: [] as string[],
         failed: [] as { email: string; error: string }[]
@@ -164,11 +170,7 @@ const handler = async (req: Request): Promise<Response> => {
 
       if (validInvitations.length === 0) {
         return new Response(
-          JSON.stringify({
-            success: false,
-            results,
-            message: 'No valid invitations to process'
-          }),
+          JSON.stringify({ success: false, results, message: 'No valid invitations to process' }),
           { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
@@ -176,7 +178,7 @@ const handler = async (req: Request): Promise<Response> => {
       // Batch check for existing pending invitations
       const emails = validInvitations.map(inv => inv.email);
       const firstInvitation = validInvitations[0];
-      
+
       const { data: existingInvites } = await supabase
         .from('member_invitations')
         .select('email')
@@ -186,7 +188,6 @@ const handler = async (req: Request): Promise<Response> => {
 
       const existingEmails = new Set((existingInvites || []).map(inv => inv.email));
 
-      // Filter out duplicates
       const newInvitations = validInvitations.filter(inv => {
         if (existingEmails.has(inv.email)) {
           results.failed.push({ email: inv.email, error: 'Active invitation already exists' });
@@ -197,11 +198,7 @@ const handler = async (req: Request): Promise<Response> => {
 
       if (newInvitations.length === 0) {
         return new Response(
-          JSON.stringify({
-            success: true,
-            results,
-            message: 'All invitations already exist'
-          }),
+          JSON.stringify({ success: true, results, message: 'All invitations already exist' }),
           { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
@@ -210,24 +207,18 @@ const handler = async (req: Request): Promise<Response> => {
       let organizationName = 'the organization';
       if (firstInvitation.organization_type === 'company') {
         const { data: company } = await supabase
-          .from('companies')
-          .select('name')
-          .eq('id', firstInvitation.organization_id)
-          .single();
+          .from('companies').select('name').eq('id', firstInvitation.organization_id).single();
         if (company) organizationName = company.name;
       } else {
         const { data: association } = await supabase
-          .from('associations')
-          .select('name')
-          .eq('id', firstInvitation.organization_id)
-          .single();
+          .from('associations').select('name').eq('id', firstInvitation.organization_id).single();
         if (association) organizationName = association.name;
       }
 
-      // Prepare all invitation records
+      // Prepare invitation records (NO plaintext token stored)
       const invitationRecords = [];
-      const tokenMap = new Map<string, string>(); // email -> raw token
-      
+      const tokenMap = new Map<string, string>(); // email -> raw token (for email URLs only)
+
       for (const inv of newInvitations) {
         try {
           const rawToken = generateToken();
@@ -245,7 +236,6 @@ const handler = async (req: Request): Promise<Response> => {
             role: inv.role || 'member',
             designation: inv.designation || null,
             department: inv.department || null,
-            token: rawToken,
             token_hash: tokenHash,
             expires_at: expiresAt.toISOString(),
             invited_by: user.id,
@@ -263,19 +253,13 @@ const handler = async (req: Request): Promise<Response> => {
         .select();
 
       if (batchInsertError) {
-        console.error('Batch insert error:', batchInsertError);
         return new Response(
-          JSON.stringify({
-            success: false,
-            error: 'Failed to create invitations: ' + batchInsertError.message
-          }),
+          JSON.stringify({ success: false, error: 'Failed to create invitations: ' + batchInsertError.message }),
           { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
 
-      console.log(`Successfully inserted ${insertedInvitations.length} invitations`);
-
-      // Batch insert audit logs immediately
+      // Batch insert audit logs
       const auditRecords = insertedInvitations.map(inv => ({
         invitation_id: inv.id,
         action: 'created',
@@ -284,11 +268,9 @@ const handler = async (req: Request): Promise<Response> => {
 
       try {
         await supabase.from('member_invitation_audit').insert(auditRecords);
-      } catch (auditError) {
-        console.error('Audit log error:', auditError);
-      }
+      } catch { /* non-blocking */ }
 
-      // Send all emails in background after response
+      // Send all emails in background (fire and forget)
       const emailPromises = insertedInvitations.map(async (invitation) => {
         const rawToken = tokenMap.get(invitation.email);
         if (!rawToken) return;
@@ -297,49 +279,10 @@ const handler = async (req: Request): Promise<Response> => {
         if (!invData) return;
 
         const registrationUrl = `${appUrl}/register?token=${rawToken}`;
-        const emailHtml = `
-          <!DOCTYPE html>
-          <html>
-            <head>
-              <style>
-                body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-                .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-                .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; text-align: center; border-radius: 8px 8px 0 0; }
-                .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 8px 8px; }
-                .button { display: inline-block; background: #667eea; color: white; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-weight: bold; margin: 20px 0; }
-                .info-box { background: white; padding: 15px; border-left: 4px solid #667eea; margin: 20px 0; }
-                .footer { text-align: center; margin-top: 30px; color: #888; font-size: 12px; }
-              </style>
-            </head>
-            <body>
-              <div class="container">
-                <div class="header">
-                  <h1>🎉 You're Invited!</h1>
-                </div>
-                <div class="content">
-                  <p>Hello ${invData.first_name},</p>
-                  <p>You've been invited to join <strong>${organizationName}</strong> on SMB Connect!</p>
-                  <div class="info-box">
-                    <p><strong>Role:</strong> ${(invData.role || 'member').charAt(0).toUpperCase() + (invData.role || 'member').slice(1)}</p>
-                    ${invData.designation ? `<p><strong>Designation:</strong> ${invData.designation}</p>` : ''}
-                    ${invData.department ? `<p><strong>Department:</strong> ${invData.department}</p>` : ''}
-                  </div>
-                  <p>Click the button below to complete your registration. This invitation expires in <strong>48 hours</strong>.</p>
-                  <div style="text-align: center;">
-                    <a href="${registrationUrl}" class="button">Complete Registration</a>
-                  </div>
-                  <p style="margin-top: 30px; font-size: 12px; color: #666;">
-                    If the button doesn't work, copy and paste this link into your browser:<br>
-                    <a href="${registrationUrl}">${registrationUrl}</a>
-                  </p>
-                </div>
-                <div class="footer">
-                  <p>© 2025 SMB Connect. All rights reserved.</p>
-                </div>
-              </div>
-            </body>
-          </html>
-        `;
+        const emailHtml = buildInvitationEmailHtml(
+          invData.first_name, organizationName, registrationUrl,
+          invData.role, invData.designation, invData.department,
+        );
 
         try {
           await resend.emails.send({
@@ -349,164 +292,75 @@ const handler = async (req: Request): Promise<Response> => {
             html: emailHtml,
           });
           results.successful.push(invitation.email);
-        } catch (err) {
-          console.error(`Email error for ${invitation.email}:`, err);
-        }
+        } catch { /* non-blocking email error */ }
       });
 
-      // Send all emails in background after response (fire and forget)
-      Promise.all(emailPromises).catch(err => console.error('Background email error:', err));
+      Promise.all(emailPromises).catch(() => {});
 
       return new Response(
         JSON.stringify({
-          success: true,
-          results,
+          success: true, results,
           message: `Created ${insertedInvitations.length} invitations successfully. Emails are being sent in the background.`
         }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    // Single invitation logic
-    const { data: existingInvite, error: duplicateCheckError } = await supabase
-      .from('member_invitations')
-      .select('id, status')
-      .eq('email', email.toLowerCase())
-      .eq('organization_id', organization_id)
-      .eq('status', 'pending')
-      .single();
+    // ================================================================
+    // SINGLE INVITATION PATH (uses RPC — 6 DB roundtrips → 1 atomic call)
+    // RPC handles: permission check, rate limit, dedup, insert, org name, audit
+    // Token is generated by pgcrypto in the RPC and NEVER persisted as plaintext
+    // ================================================================
+    const { data: rpcResult, error: rpcError } = await supabase.rpc('create_single_member_invitation', {
+      p_user_id: user.id,
+      p_email: email,
+      p_first_name: first_name,
+      p_last_name: last_name,
+      p_organization_id: organization_id,
+      p_organization_type: organization_type,
+      p_role: role,
+      p_designation: designation || null,
+      p_department: department || null,
+    });
 
-    if (duplicateCheckError && duplicateCheckError.code !== 'PGRST116') {
-      console.error('Error checking for duplicate invitation:', duplicateCheckError);
+    if (rpcError) {
+      console.error('RPC error:', rpcError);
+      throw new Error('Failed to create invitation');
     }
 
-    if (existingInvite) {
-      console.log('Duplicate invitation found for:', email);
+    if (!rpcResult.success) {
       return new Response(
-        JSON.stringify({ error: 'An active invitation already exists for this email' }),
-        { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({ error: rpcResult.error }),
+        { status: rpcResult.status || 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    const rawToken = generateToken();
-    const tokenHash = await hashToken(rawToken);
-    const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000);
-
-    const { data: invitation, error: insertError } = await supabase
-      .from('member_invitations')
-      .insert({
-        email: email.toLowerCase(),
-        first_name,
-        last_name,
-        organization_id,
-        organization_type,
-        role,
-        designation,
-        department,
-        token: rawToken,
-        token_hash: tokenHash,
-        expires_at: expiresAt.toISOString(),
-        invited_by: user.id,
-        status: 'pending'
-      })
-      .select()
-      .single();
-
-    if (insertError) {
-      console.error('Error creating invitation:', insertError);
-      throw insertError;
-    }
-
-    let organizationName = 'the organization';
-    if (organization_type === 'company') {
-      const { data: company } = await supabase
-        .from('companies')
-        .select('name')
-        .eq('id', organization_id)
-        .single();
-      if (company) organizationName = company.name;
-    } else {
-      const { data: association } = await supabase
-        .from('associations')
-        .select('name')
-        .eq('id', organization_id)
-        .single();
-      if (association) organizationName = association.name;
-    }
-
-    const registrationUrl = `${appUrl}/register?token=${rawToken}`;
-    const emailHtml = `
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <style>
-            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-            .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-            .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; text-align: center; border-radius: 8px 8px 0 0; }
-            .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 8px 8px; }
-            .button { display: inline-block; background: #667eea; color: white; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-weight: bold; margin: 20px 0; }
-            .info-box { background: white; padding: 15px; border-left: 4px solid #667eea; margin: 20px 0; }
-            .footer { text-align: center; margin-top: 30px; color: #888; font-size: 12px; }
-          </style>
-        </head>
-        <body>
-          <div class="container">
-            <div class="header">
-              <h1>🎉 You're Invited!</h1>
-            </div>
-            <div class="content">
-              <p>Hello${first_name ? ' ' + first_name : ''},</p>
-              <p>You've been invited to join <strong>${organizationName}</strong> on SMB Connect!</p>
-              <div class="info-box">
-                <p><strong>Role:</strong> ${role.charAt(0).toUpperCase() + role.slice(1)}</p>
-                ${designation ? `<p><strong>Designation:</strong> ${designation}</p>` : ''}
-                ${department ? `<p><strong>Department:</strong> ${department}</p>` : ''}
-              </div>
-              <p>Click the button below to complete your registration. This invitation expires in <strong>48 hours</strong>.</p>
-              <div style="text-align: center;">
-                <a href="${registrationUrl}" class="button">Complete Registration</a>
-              </div>
-              <p style="margin-top: 30px; font-size: 12px; color: #666;">
-                If the button doesn't work, copy and paste this link into your browser:<br>
-                <a href="${registrationUrl}">${registrationUrl}</a>
-              </p>
-            </div>
-            <div class="footer">
-              <p>© 2025 SMB Connect. All rights reserved.</p>
-            </div>
-          </div>
-        </body>
-      </html>
-    `;
+    // Send invitation email using the raw token from RPC (never persisted in DB)
+    const registrationUrl = `${appUrl}/register?token=${rpcResult.raw_token}`;
+    const emailHtml = buildInvitationEmailHtml(
+      first_name, rpcResult.organization_name, registrationUrl,
+      role, designation, department,
+    );
 
     try {
       await resend.emails.send({
         from: 'SMB Connect <noreply@smbconnect.in>',
         to: [email],
-        subject: `You're invited to join ${organizationName} on SMB Connect`,
+        subject: `You're invited to join ${rpcResult.organization_name} on SMB Connect`,
         html: emailHtml,
       });
-    } catch (emailError) {
-      console.error('Error sending email (non-blocking):', emailError);
-    }
-
-    await supabase.from('member_invitation_audit').insert({
-      invitation_id: invitation.id,
-      action: 'created',
-      performed_by: user.id
-    });
+    } catch { /* non-blocking email error */ }
 
     return new Response(
       JSON.stringify({
         success: true,
-        invitation_id: invitation.id,
+        invitation_id: rpcResult.invitation_id,
         message: 'Invitation created and email sent successfully'
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
 
   } catch (error: any) {
-    console.error('Error in create-member-invitation:', error);
     return new Response(
       JSON.stringify({ error: error.message }),
       { status: error.message.includes('Unauthorized') ? 401 : 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

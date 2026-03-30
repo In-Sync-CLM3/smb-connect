@@ -5,9 +5,11 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, Send, AlertCircle, Image as ImageIcon, Upload } from 'lucide-react';
+import { Loader2, Send, AlertCircle, Image as ImageIcon } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useUserRole } from '@/hooks/useUserRole';
+import { useImageUpload } from '@/hooks/useImageUpload';
+import { quillModules, quillFormats } from '@/lib/quillConfig';
 import 'react-quill/dist/quill.snow.css';
 
 const ReactQuill = lazy(() => import('react-quill'));
@@ -26,9 +28,8 @@ export function BulkEmailDialog({
   const { toast } = useToast();
   const { role, userData } = useUserRole();
   const quillRef = useRef<any>(null);
-  const imageInputRef = useRef<HTMLInputElement>(null);
+  const { imageInputRef, uploadingImage, handleImageUpload } = useImageUpload(quillRef);
   const [loading, setLoading] = useState(false);
-  const [uploadingImage, setUploadingImage] = useState(false);
   const [recipientCount, setRecipientCount] = useState(0);
   const [listNames, setListNames] = useState<string[]>([]);
   const [senderEmail, setSenderEmail] = useState('');
@@ -63,72 +64,6 @@ export function BulkEmailDialog({
       setRecipientCount(count || 0);
     } catch (error) {
       console.error('Error loading recipient info:', error);
-    }
-  };
-
-  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    // Validate image upload
-    const { validateImageUpload } = await import('@/lib/uploadValidation');
-    const validation = await validateImageUpload(file);
-    
-    if (!validation.valid) {
-      toast({
-        title: 'Validation Error',
-        description: validation.error,
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    setUploadingImage(true);
-    try {
-      // Upload to Supabase storage
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${Math.random().toString(36).substring(2)}-${Date.now()}.${fileExt}`;
-
-      const { error: uploadError, data } = await supabase.storage
-        .from('email-images')
-        .upload(fileName, file, {
-          cacheControl: '3600',
-          upsert: false,
-        });
-
-      if (uploadError) throw uploadError;
-
-      // Get public URL
-      const { data: { publicUrl } } = supabase.storage
-        .from('email-images')
-        .getPublicUrl(fileName);
-
-      // Insert image into editor
-      const quill = quillRef.current?.getEditor();
-      if (quill) {
-        const range = quill.getSelection(true);
-        quill.insertEmbed(range.index, 'image', publicUrl);
-        quill.setSelection(range.index + 1);
-      }
-
-      toast({
-        title: 'Success',
-        description: 'Image uploaded successfully',
-      });
-
-      // Reset file input
-      if (imageInputRef.current) {
-        imageInputRef.current.value = '';
-      }
-    } catch (error: any) {
-      console.error('Error uploading image:', error);
-      toast({
-        title: 'Error',
-        description: error.message || 'Failed to upload image',
-        variant: 'destructive',
-      });
-    } finally {
-      setUploadingImage(false);
     }
   };
 
@@ -194,28 +129,6 @@ export function BulkEmailDialog({
       setLoading(false);
     }
   };
-
-  const quillModules = {
-    toolbar: [
-      [{ 'header': [1, 2, 3, false] }],
-      ['bold', 'italic', 'underline', 'strike'],
-      [{ 'list': 'ordered'}, { 'list': 'bullet' }],
-      [{ 'color': [] }, { 'background': [] }],
-      [{ 'align': [] }],
-      ['link'],
-      ['clean']
-    ],
-  };
-
-  const quillFormats = [
-    'header',
-    'bold', 'italic', 'underline', 'strike',
-    'list', 'bullet',
-    'color', 'background',
-    'align',
-    'link',
-    'image'
-  ];
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

@@ -28,13 +28,10 @@ serve(async (req) => {
       );
     }
 
-    console.log('Accepting company invitation:', { token, userId });
-
     // Verify user email via Auth Admin (cannot be done in PostgreSQL)
     const { data: { user }, error: userError } = await supabase.auth.admin.getUserById(userId);
 
     if (userError || !user || !user.email) {
-      console.error('User verification failed:', userError);
       return new Response(
         JSON.stringify({ error: 'Email does not match invitation' }),
         {
@@ -54,7 +51,6 @@ serve(async (req) => {
     });
 
     if (rpcError) {
-      console.error('RPC error:', rpcError);
       return new Response(
         JSON.stringify({ error: rpcError.message }),
         {
@@ -77,8 +73,6 @@ serve(async (req) => {
       );
     }
 
-    console.log('Company invitation accepted successfully');
-
     return new Response(
       JSON.stringify(data),
       {
@@ -88,7 +82,6 @@ serve(async (req) => {
     );
 
   } catch (error) {
-    console.error('Error accepting company invitation:', error);
     const errorMessage = error instanceof Error ? error.message : 'Internal server error';
     return new Response(
       JSON.stringify({ error: errorMessage }),

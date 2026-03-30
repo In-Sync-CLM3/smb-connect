@@ -42,6 +42,12 @@ interface Event {
   link_preview_title: string | null;
   link_preview_description: string | null;
   link_preview_image: string | null;
+  // Landing page events
+  source?: 'calendar' | 'landing_page';
+  slug?: string;
+  event_time?: string | null;
+  association_name?: string | null;
+  allDay?: boolean;
 }
 
 interface LinkPreview {
@@ -85,14 +91,24 @@ export default function EventsCalendar() {
   const loadEvents = async () => {
     try {
       setLoading(true);
-      const { data, error } = await supabase
-        .from('events')
-        .select('*')
-        .order('start_date', { ascending: true });
 
-      if (error) throw error;
+      // Fetch both sources in parallel
+      const [calendarRes, landingRes] = await Promise.all([
+        supabase
+          .from('events')
+          .select('*')
+          .order('start_date', { ascending: true }),
+        supabase
+          .from('event_landing_pages')
+          .select('id, title, slug, event_date, event_time, event_venue, is_active, created_by, association_id, associations(name)')
+          .eq('is_active', true)
+          .not('event_date', 'is', null),
+      ]);
 
-      const formattedEvents = (data || []).map(event => ({
+      if (calendarRes.error) throw calendarRes.error;
+
+      // Calendar events (existing source)
+      const calendarEvents: Event[] = (calendarRes.data || []).map(event => ({
         id: event.id,
         title: event.title,
         description: event.description,
@@ -106,9 +122,37 @@ export default function EventsCalendar() {
         link_preview_title: event.link_preview_title,
         link_preview_description: event.link_preview_description,
         link_preview_image: event.link_preview_image,
+        source: 'calendar' as const,
       }));
 
-      setEvents(formattedEvents);
+      // Landing page events (new source)
+      const landingEvents: Event[] = (landingRes.data || []).map((lp: any) => {
+        const eventDate = new Date(lp.event_date + 'T00:00:00');
+        const endDate = new Date(lp.event_date + 'T23:59:59');
+        const assocName = lp.associations?.name || null;
+        return {
+          id: `lp-${lp.id}`,
+          title: lp.title,
+          description: lp.event_time ? `Time: ${lp.event_time}` : null,
+          start: eventDate,
+          end: endDate,
+          location: lp.event_venue,
+          event_type: 'landing_page',
+          created_by: lp.created_by,
+          event_link: `/event/${lp.slug}`,
+          thumbnail_url: null,
+          link_preview_title: null,
+          link_preview_description: null,
+          link_preview_image: null,
+          source: 'landing_page' as const,
+          slug: lp.slug,
+          event_time: lp.event_time,
+          association_name: assocName,
+          allDay: true,
+        };
+      });
+
+      setEvents([...calendarEvents, ...landingEvents]);
     } catch (error: any) {
       toast({
         title: 'Error',
@@ -128,8 +172,12 @@ export default function EventsCalendar() {
   };
 
   const handleSelectEvent = (event: Event) => {
-    console.log('=== EVENT CLICKED ===');
-    console.log('Event:', event);
+    // Landing page events → navigate to the event page
+    if (event.source === 'landing_page' && event.slug) {
+      navigate(`/event/${event.slug}`);
+      return;
+    }
+
     setSelectedEvent(event);
     setFormData({
       title: event.title,
@@ -646,6 +694,16 @@ export default function EventsCalendar() {
             views={['month', 'week', 'day', 'agenda']}
             defaultView="month"
             style={{ height: '100%' }}
+            eventPropGetter={(event: Event) => ({
+              style: event.source === 'landing_page'
+                ? { backgroundColor: '#16a34a', borderColor: '#15803d' }
+                : undefined,
+            })}
+            tooltipAccessor={(event: Event) =>
+              event.source === 'landing_page'
+                ? `${event.title}${event.association_name ? ` — ${event.association_name}` : ''}${event.event_time ? `\n${event.event_time}` : ''}${event.location ? `\n${event.location}` : ''}`
+                : event.title
+            }
           />
         </div>
       </main>

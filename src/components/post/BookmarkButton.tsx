@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
@@ -13,6 +13,7 @@ export function BookmarkButton({ postId, userId }: BookmarkButtonProps) {
   const { toast } = useToast();
   const [isBookmarked, setIsBookmarked] = useState(false);
   const [loading, setLoading] = useState(false);
+  const inFlight = useRef(false);
 
   useEffect(() => {
     if (userId) {
@@ -47,6 +48,8 @@ export function BookmarkButton({ postId, userId }: BookmarkButtonProps) {
       return;
     }
 
+    if (inFlight.current) return;
+    inFlight.current = true;
     setLoading(true);
     try {
       if (isBookmarked) {
@@ -89,6 +92,7 @@ export function BookmarkButton({ postId, userId }: BookmarkButtonProps) {
         variant: 'destructive',
       });
     } finally {
+      inFlight.current = false;
       setLoading(false);
     }
   };

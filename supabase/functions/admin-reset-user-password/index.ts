@@ -97,7 +97,6 @@ serve(async (req) => {
       result = { resetLink: data.properties.action_link };
       action = 'sent_reset_email';
       
-      console.log('Password reset email sent for user:', userId);
     } else if (newPassword) {
       if (newPassword.length < 8) {
         return new Response(
@@ -119,7 +118,6 @@ serve(async (req) => {
       result = { success: true };
       action = 'reset_password';
       
-      console.log('Password reset successfully for user:', userId);
     } else {
       return new Response(
         JSON.stringify({ error: 'Either newPassword or sendResetEmail must be provided' }),

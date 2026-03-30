@@ -40,14 +40,11 @@ const handler = async (req: Request): Promise<Response> => {
     const { data: { user }, error: userError } = await supabase.auth.getUser(token);
 
     if (userError || !user) {
-      console.error('Authentication error:', userError);
       return new Response(JSON.stringify({ error: 'Unauthorized - Invalid token' }), {
         status: 401,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
-
-    console.log('Authenticated user:', user.id);
 
     const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
     if (!RESEND_API_KEY) {
@@ -57,8 +54,7 @@ const handler = async (req: Request): Promise<Response> => {
     const resend = new Resend(RESEND_API_KEY);
 
     const inviteData: InvitationEmailRequest = await req.json();
-    console.log('Sending company invitation email to:', inviteData.recipientEmail);
-    
+
     // Use the production app URL for invitation links
     const appUrl = Deno.env.get('APP_URL') || 'https://gentle-field-0d01a791e.5.azurestaticapps.net';
     const acceptUrl = `${appUrl}/accept-invitation?token=${inviteData.token}`;
@@ -114,11 +110,8 @@ const handler = async (req: Request): Promise<Response> => {
       },
     });
 
-    console.log('Invitation email sent via Resend:', emailResponse);
-
     // Check if Resend returned an error
     if (emailResponse.error) {
-      console.error('Resend error:', emailResponse.error);
       throw new Error(emailResponse.error.message || 'Failed to send email via Resend');
     }
 
@@ -133,7 +126,6 @@ const handler = async (req: Request): Promise<Response> => {
       }
     );
   } catch (error: any) {
-    console.error('Error in send-company-invitation function:', error);
     return new Response(
       JSON.stringify({ error: error.message }),
       {

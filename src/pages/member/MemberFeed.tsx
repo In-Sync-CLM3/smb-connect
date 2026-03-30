@@ -293,17 +293,7 @@ export default function MemberFeed() {
       const userIds = Array.from(new Set(postsData.map((post: any) => post.user_id)));
       const originalAuthorIds = Array.from(new Set(postsData.map((post: any) => post.original_author_id).filter(Boolean)));
       const allUserIds = Array.from(new Set([...userIds, ...originalAuthorIds]));
-
-      // Batch fetch all profiles
-      const { data: profilesData } = await supabase
-        .from('profiles')
-        .select('id, first_name, last_name, avatar, headline')
-        .in('id', allUserIds);
-
-      const profilesById = (profilesData || []).reduce((acc: Record<string, any>, profile: any) => {
-        acc[profile.id] = profile;
-        return acc;
-      }, {} as Record<string, any>);
+      const postIds = postsData.map(p => p.id);
 
       // Collect organization IDs for association posts
       const orgIds = Array.from(new Set(
@@ -311,43 +301,34 @@ export default function MemberFeed() {
           .map(p => p.organization_id!)
       ));
 
-      // Batch fetch association info
-      let associationsById: Record<string, Association> = {};
-      if (orgIds.length > 0) {
-        const { data: assocData } = await supabase
-          .from('associations')
-          .select('id, name, logo')
-          .in('id', orgIds);
-        associationsById = (assocData || []).reduce((acc, a) => {
-          acc[a.id] = a;
-          return acc;
-        }, {} as Record<string, Association>);
-      }
+      // Parallel fetch: profiles, associations, members, likes (4 independent queries)
+      const [profilesRes, assocRes, membersRes, likesRes] = await Promise.all([
+        supabase.from('profiles').select('id, first_name, last_name, avatar, headline').in('id', allUserIds),
+        orgIds.length > 0
+          ? supabase.from('associations').select('id, name, logo').in('id', orgIds)
+          : Promise.resolve({ data: [] as any[] }),
+        supabase.from('members').select('user_id, company:companies(name)').in('user_id', userIds).eq('is_active', true),
+        user
+          ? supabase.from('post_likes').select('post_id').eq('user_id', user.id).in('post_id', postIds)
+          : Promise.resolve({ data: [] as any[] }),
+      ]);
 
-      // Batch fetch member data for all post authors
-      const { data: membersData } = await supabase
-        .from('members')
-        .select('user_id, company:companies(name)')
-        .in('user_id', userIds)
-        .eq('is_active', true);
+      const profilesById = (profilesRes.data || []).reduce((acc: Record<string, any>, profile: any) => {
+        acc[profile.id] = profile;
+        return acc;
+      }, {} as Record<string, any>);
 
-      const membersByUserId = (membersData || []).reduce((acc: Record<string, any>, m: any) => {
+      const associationsById: Record<string, Association> = (assocRes.data || []).reduce((acc: Record<string, Association>, a: any) => {
+        acc[a.id] = a;
+        return acc;
+      }, {} as Record<string, Association>);
+
+      const membersByUserId = (membersRes.data || []).reduce((acc: Record<string, any>, m: any) => {
         if (!acc[m.user_id]) acc[m.user_id] = m;
         return acc;
       }, {} as Record<string, any>);
 
-      // Batch fetch likes
-      let likedPostIds = new Set<string>();
-      if (user) {
-        const postIds = postsData.map(p => p.id);
-        const { data: likesData } = await supabase
-          .from('post_likes')
-          .select('post_id')
-          .eq('user_id', user.id)
-          .in('post_id', postIds);
-
-        likedPostIds = new Set(likesData?.map(l => l.post_id) || []);
-      }
+      const likedPostIds = new Set<string>(likesRes.data?.map((l: any) => l.post_id) || []);
 
       // Assemble posts with all data (no per-post queries)
       const postsWithProfiles = postsData.map(post => {
@@ -640,43 +621,32 @@ export default function MemberFeed() {
       const user = session?.user;
       if (!user) throw new Error('Not authenticated');
 
-      if (currentlyLiked) {
-        // Unlike
-        await supabase
-          .from('post_likes')
-          .delete()
-          .eq('post_id', postId)
-          .eq('user_id', user.id);
+      // Optimistic update — instant UI feedback
+      setPosts(prev => prev.map(p => p.id === postId
+        ? { ...p, user_liked: !currentlyLiked, likes_count: currentlyLiked ? Math.max(0, p.likes_count - 1) : p.likes_count + 1 }
+        : p
+      ));
 
-        // Update likes count
+      if (currentlyLiked) {
+        await supabase.from('post_likes').delete().eq('post_id', postId).eq('user_id', user.id);
         const post = posts.find(p => p.id === postId);
         if (post && post.likes_count > 0) {
-          await supabase
-            .from('posts')
-            .update({ likes_count: post.likes_count - 1 })
-            .eq('id', postId);
+          await supabase.from('posts').update({ likes_count: post.likes_count - 1 }).eq('id', postId);
         }
       } else {
-        // Like
-        await supabase
-          .from('post_likes')
-          .insert({
-            post_id: postId,
-            user_id: user.id,
-          });
-
-        // Update likes count
+        await supabase.from('post_likes').insert({ post_id: postId, user_id: user.id });
         const post = posts.find(p => p.id === postId);
         if (post) {
-          await supabase
-            .from('posts')
-            .update({ likes_count: post.likes_count + 1 })
-            .eq('id', postId);
+          await supabase.from('posts').update({ likes_count: post.likes_count + 1 }).eq('id', postId);
         }
       }
-
-      loadPosts();
+      // No loadPosts() — realtime subscription pushes count updates
     } catch (error: any) {
+      // Revert optimistic update on failure
+      setPosts(prev => prev.map(p => p.id === postId
+        ? { ...p, user_liked: currentlyLiked, likes_count: currentlyLiked ? p.likes_count + 1 : Math.max(0, p.likes_count - 1) }
+        : p
+      ));
       toast({
         title: 'Error',
         description: 'Failed to update like',
@@ -687,6 +657,9 @@ export default function MemberFeed() {
 
   const handleDeletePost = async (postId: string) => {
     try {
+      // Optimistic removal
+      setPosts(prev => prev.filter(p => p.id !== postId));
+
       const { error } = await supabase
         .from('posts')
         .delete()
@@ -698,8 +671,9 @@ export default function MemberFeed() {
         title: 'Success',
         description: 'Post deleted',
       });
-      loadPosts();
     } catch (error: any) {
+      // Revert on failure
+      loadPosts();
       toast({
         title: 'Error',
         description: 'Failed to delete post',
@@ -736,7 +710,7 @@ export default function MemberFeed() {
         title: 'Success',
         description: 'Post reposted successfully',
       });
-      loadPosts();
+      // No loadPosts() — realtime INSERT event triggers reload
     } catch (error: any) {
       toast({
         title: 'Error',
@@ -1279,7 +1253,7 @@ export default function MemberFeed() {
                             postId={post.id}
                             postContent={post.content}
                             sharesCount={post.shares_count || 0}
-                            onShareComplete={loadPosts}
+                            onShareComplete={() => {}}
                           />
                           <BookmarkButton postId={post.id} userId={currentUserId} />
                         </div>
@@ -1289,7 +1263,7 @@ export default function MemberFeed() {
                           <CommentsSection
                             postId={post.id}
                             currentUserId={currentUserId}
-                            onCommentAdded={loadPosts}
+                            onCommentAdded={() => {}}
                           />
                         )}
                       </div>

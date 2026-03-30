@@ -55,6 +55,7 @@ export function ConversationList({ selectedChatId, onSelectChat, currentUserId }
   const [loading, setLoading] = useState(true);
   const [composeOpen, setComposeOpen] = useState(false);
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const latestRequest = useRef(0);
 
   useEffect(() => {
     if (currentUserId) {
@@ -84,6 +85,7 @@ export function ConversationList({ selectedChatId, onSelectChat, currentUserId }
   }, [currentUserId]);
 
   const loadConversations = async () => {
+    const requestId = ++latestRequest.current;
     try {
       if (!currentUserId) return;
 
@@ -218,9 +220,11 @@ export function ConversationList({ selectedChatId, onSelectChat, currentUserId }
         };
       });
 
+      if (requestId !== latestRequest.current) return; // stale request
       setConversations(conversationsWithDetails);
       setLoading(false);
     } catch (error) {
+      if (requestId !== latestRequest.current) return; // stale request
       console.error('Error loading conversations:', error);
       setLoading(false);
     }

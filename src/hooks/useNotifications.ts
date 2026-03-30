@@ -129,15 +129,12 @@ export function useNotifications(currentUserId: string | null) {
         },
         (payload) => {
           const updatedNotification = payload.new as Notification;
-          setNotifications(prev =>
-            prev.map(n =>
-              n.id === updatedNotification.id ? updatedNotification : n
-            )
-          );
-          // Recalculate unread count
           setNotifications(prev => {
-            setUnreadCount(prev.filter(n => !n.is_read).length);
-            return prev;
+            const next = prev.map(n =>
+              n.id === updatedNotification.id ? updatedNotification : n
+            );
+            setUnreadCount(next.filter(n => !n.is_read).length);
+            return next;
           });
         }
       )

@@ -2,8 +2,6 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { Resend } from 'https://esm.sh/resend@3.0.0'
 
 serve(async (req) => {
-  console.log('Password reset email webhook received')
-  
   if (req.method !== 'POST') {
     return new Response('Method not allowed', { status: 405 })
   }
@@ -13,25 +11,18 @@ serve(async (req) => {
     
     const payload = await req.json()
     
-    console.log('Processing password reset request')
-
     const {
       user,
       email_data: { token, email_action_type },
     } = payload
 
-    console.log('Email action type:', email_action_type, 'for user:', user.email)
-
     // Only process recovery emails
     if (email_action_type !== 'recovery') {
-      console.log('Not a recovery email, skipping')
       return new Response(JSON.stringify({ success: true }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
       })
     }
-
-    console.log('Sending password reset email with token to:', user.email)
 
     const htmlContent = `
       <!DOCTYPE html>
@@ -128,7 +119,6 @@ serve(async (req) => {
     })
 
     if (error) {
-      console.error('Resend error:', error)
       return new Response(
         JSON.stringify({ error: error.message }),
         {
@@ -138,14 +128,11 @@ serve(async (req) => {
       )
     }
 
-    console.log('Password reset email sent successfully:', data)
-
     return new Response(JSON.stringify({ success: true, messageId: data?.id }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
     })
   } catch (error: any) {
-    console.error('Error in send-password-reset function:', error)
     return new Response(
       JSON.stringify({
         error: error.message || 'Failed to send password reset email',

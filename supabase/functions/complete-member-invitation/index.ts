@@ -6,7 +6,6 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// SHA-256 hash for token verification
 async function hashToken(token: string): Promise<string> {
   const encoder = new TextEncoder();
   const data = encoder.encode(token);
@@ -29,7 +28,6 @@ const handler = async (req: Request): Promise<Response> => {
     const body = await req.json();
     const { token, password, first_name, last_name } = body;
 
-    // Validate inputs
     if (!token || !password) {
       throw new Error('Missing required fields: token and password');
     }
@@ -38,48 +36,45 @@ const handler = async (req: Request): Promise<Response> => {
       throw new Error('Password must be at least 8 characters long');
     }
 
-    console.log('Completing member invitation');
+    // ============================================================
+    // Step 1: Verify invitation via existing RPC (1 call instead of 2)
+    // ============================================================
+    const { data: verification, error: verifyError } = await supabase.rpc('verify_member_invitation', {
+      p_token: token,
+    });
 
-    // Hash token to match database
-    const tokenHash = await hashToken(token);
-
-    // Fetch invitation with status='pending' and not expired
-    const { data: invitation, error: inviteError } = await supabase
-      .from('member_invitations')
-      .select('*')
-      .eq('token_hash', tokenHash)
-      .eq('status', 'pending')
-      .gte('expires_at', new Date().toISOString())
-      .single();
-
-    if (inviteError || !invitation) {
-      console.log('Invalid or expired invitation');
+    if (verifyError) {
+      console.error('Verification RPC error:', verifyError);
       throw new Error('Invalid or expired invitation');
     }
 
-    console.log('Found valid invitation:', invitation.id);
+    if (!verification?.valid) {
+      throw new Error(verification?.error || 'Invalid or expired invitation');
+    }
 
-    // Deterministic user lookup via profiles table
-    const normalizedInviteEmail = invitation.email.trim().toLowerCase();
-    console.log('Looking up existing user for:', normalizedInviteEmail);
+    const invitation = verification.invitation || verification;
+    const invitationId = invitation.invitation_id || invitation.id;
+    const invitationEmail = invitation.email;
+
+    // ============================================================
+    // Step 2: Check if user already exists (Auth Admin API)
+    // ============================================================
+    const normalizedEmail = invitationEmail.trim().toLowerCase();
 
     const { data: profileMatches } = await supabase
       .from('profiles')
       .select('id, email')
-      .ilike('email', normalizedInviteEmail);
+      .ilike('email', normalizedEmail);
 
     let existingUser = null;
     if (profileMatches && profileMatches.length === 1) {
       const { data: { user: authUser } } = await supabase.auth.admin.getUserById(profileMatches[0].id);
-      if (authUser && authUser.email?.toLowerCase() === normalizedInviteEmail) {
+      if (authUser && authUser.email?.toLowerCase() === normalizedEmail) {
         existingUser = authUser;
-        console.log('Resolved existing user via profiles:', authUser.id);
       }
-    } else if (profileMatches && profileMatches.length > 1) {
-      console.error('Ambiguous profile match for invitation email:', normalizedInviteEmail);
     }
 
-    // Fallback: paginated auth scan if no profile match
+    // Fallback: paginated auth scan
     if (!existingUser && (!profileMatches || profileMatches.length === 0)) {
       let page = 1;
       const perPage = 50;
@@ -87,16 +82,14 @@ const handler = async (req: Request): Promise<Response> => {
       while (!found) {
         const { data: { users } } = await supabase.auth.admin.listUsers({ page, perPage });
         if (!users || users.length === 0) break;
-        const match = users.find(u => u.email?.toLowerCase() === normalizedInviteEmail);
-        if (match) { existingUser = match; found = true; console.log('Resolved existing user via scan:', match.id); }
+        const match = users.find(u => u.email?.toLowerCase() === normalizedEmail);
+        if (match) { existingUser = match; found = true; }
         if (users.length < perPage) break;
         page++;
       }
     }
 
     if (existingUser) {
-      console.log('User already exists:', existingUser.id);
-      
       return new Response(
         JSON.stringify({
           success: false,
@@ -104,18 +97,17 @@ const handler = async (req: Request): Promise<Response> => {
           code: 'user_exists',
           existing_user: true
         }),
-        {
-          status: 409,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }
+        { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    // Create Supabase Auth user with auto-confirmed email
+    // ============================================================
+    // Step 3: Create Auth user
+    // ============================================================
     const { data: authData, error: authError } = await supabase.auth.admin.createUser({
-      email: invitation.email,
+      email: invitationEmail,
       password: password,
-      email_confirm: true, // Auto-confirm email
+      email_confirm: true,
       user_metadata: {
         first_name: first_name || invitation.first_name,
         last_name: last_name || invitation.last_name,
@@ -123,9 +115,6 @@ const handler = async (req: Request): Promise<Response> => {
     });
 
     if (authError || !authData.user) {
-      console.error('Error creating auth user:', authError);
-      
-      // Check if it's a duplicate email error
       if (authError?.message?.includes('already been registered')) {
         return new Response(
           JSON.stringify({
@@ -134,129 +123,43 @@ const handler = async (req: Request): Promise<Response> => {
             code: 'user_exists',
             existing_user: true
           }),
-          {
-            status: 409,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          }
+          { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
-      
       throw new Error(`Failed to create user account: ${authError?.message || 'Unknown error'}`);
     }
 
-    console.log('Auth user created:', authData.user.id);
+    // ============================================================
+    // Step 4: Complete via RPC (member creation + invitation update + audit)
+    // Replaces 3-4 sequential DB calls with 1 atomic RPC
+    // If this fails, we roll back the auth user
+    // ============================================================
+    const { data: completeResult, error: completeError } = await supabase.rpc('complete_member_invitation_db', {
+      p_invitation_id: invitationId,
+      p_user_id: authData.user.id,
+      p_first_name: first_name || null,
+      p_last_name: last_name || null,
+    });
 
-    try {
-      // Create member record
-      if (invitation.organization_type === 'company') {
-        const { error: memberError } = await supabase
-          .from('members')
-          .insert({
-            user_id: authData.user.id,
-            company_id: invitation.organization_id,
-            role: invitation.role,
-            designation: invitation.designation,
-            department: invitation.department,
-            is_active: true,
-          });
-
-        if (memberError) {
-          console.error('Error creating member:', memberError);
-          // Rollback: Delete auth user
-          await supabase.auth.admin.deleteUser(authData.user.id);
-          throw new Error(`Failed to create member record: ${memberError.message}`);
-        }
-
-        console.log('Member record created');
-      } else if (invitation.organization_type === 'association') {
-        // Only create association_managers record for admin/manager roles
-        if (['admin', 'manager'].includes(invitation.role)) {
-          const { error: managerError } = await supabase
-            .from('association_managers')
-            .insert({
-              user_id: authData.user.id,
-              association_id: invitation.organization_id,
-              is_active: true,
-            });
-
-          if (managerError) {
-            console.error('Error creating association manager:', managerError);
-            // Rollback: Delete auth user
-            await supabase.auth.admin.deleteUser(authData.user.id);
-            throw new Error(`Failed to create association manager record: ${managerError.message}`);
-          }
-
-          console.log('Association manager record created for admin/manager role');
-        }
-
-        // Create a member record for ALL association invitees (for general platform access)
-        const { error: memberError } = await supabase
-          .from('members')
-          .insert({
-            user_id: authData.user.id,
-            role: invitation.role, // Use the actual role from invitation
-            is_active: true,
-          });
-
-        if (memberError) {
-          console.error('Error creating member:', memberError);
-          // Rollback: Delete auth user
-          await supabase.auth.admin.deleteUser(authData.user.id);
-          throw new Error(`Failed to create member record: ${memberError.message}`);
-        }
-
-        console.log('Member record created for association invitee with role:', invitation.role);
-      }
-
-      // Update invitation status to 'accepted' (atomic operation for single-use enforcement)
-      const { error: updateError, count } = await supabase
-        .from('member_invitations')
-        .update({
-          status: 'accepted',
-          accepted_at: new Date().toISOString(),
-          accepted_by: authData.user.id,
-        })
-        .eq('id', invitation.id)
-        .eq('status', 'pending'); // Critical: only update if still pending
-
-      if (updateError || count === 0) {
-        console.error('Error updating invitation status or already used:', updateError);
-        // Rollback: Delete auth user and member record
-        await supabase.auth.admin.deleteUser(authData.user.id);
-        throw new Error('This invitation has already been used or was modified');
-      }
-
-      console.log('Invitation marked as accepted');
-
-      // Log audit trail
-      await supabase
-        .from('member_invitation_audit')
-        .insert({
-          invitation_id: invitation.id,
-          action: 'accepted',
-          performed_by: authData.user.id,
-          notes: 'Registration completed successfully'
-        });
-
-      return new Response(
-        JSON.stringify({
-          success: true,
-          user_id: authData.user.id,
-          message: 'Registration completed successfully'
-        }),
-        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-
-    } catch (rollbackError: any) {
-      console.error('Error during registration, attempting rollback:', rollbackError);
-      // Ensure user is deleted if anything fails
+    if (completeError || !completeResult?.success) {
+      console.error('Complete RPC error:', completeError || completeResult?.error);
+      // Rollback: delete auth user
       try {
         await supabase.auth.admin.deleteUser(authData.user.id);
       } catch (deleteError) {
         console.error('Failed to rollback user creation:', deleteError);
       }
-      throw rollbackError;
+      throw new Error(completeResult?.error || 'Failed to complete registration');
     }
+
+    return new Response(
+      JSON.stringify({
+        success: true,
+        user_id: authData.user.id,
+        message: 'Registration completed successfully'
+      }),
+      { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
 
   } catch (error: any) {
     console.error('Error in complete-member-invitation:', error);

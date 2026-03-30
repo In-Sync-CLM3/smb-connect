@@ -259,7 +259,8 @@ export default function CompanyFeed() {
       const query = supabase
         .from('posts')
         .select('*')
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .limit(50);
 
       // Filter by company if we have the info
       if (companyInfo?.id) {
@@ -274,38 +275,26 @@ export default function CompanyFeed() {
         const userIds = Array.from(new Set(postsData.map((post: any) => post.user_id)));
         const originalAuthorIds = Array.from(new Set(postsData.map((post: any) => post.original_author_id).filter(Boolean)));
         const allUserIds = Array.from(new Set([...userIds, ...originalAuthorIds]));
+        const postIds = postsData.map((p: any) => p.id);
 
-        const { data: profilesData } = await supabase
-          .from('profiles')
-          .select('id, first_name, last_name, avatar')
-          .in('id', allUserIds);
+        // Parallel fetch: profiles, members, likes (3 independent queries)
+        const [profilesRes, membersRes, likesRes] = await Promise.all([
+          supabase.from('profiles').select('id, first_name, last_name, avatar').in('id', allUserIds),
+          supabase.from('members').select('user_id, company_id, companies (name)').in('user_id', userIds).eq('is_active', true),
+          supabase.from('post_likes').select('post_id').eq('user_id', user.id).in('post_id', postIds),
+        ]);
 
-        const profilesById = (profilesData || []).reduce((acc: Record<string, any>, profile: any) => {
+        const profilesById = (profilesRes.data || []).reduce((acc: Record<string, any>, profile: any) => {
           acc[profile.id] = profile;
           return acc;
         }, {} as Record<string, any>);
 
-        // Batch fetch member data for all post authors
-        const { data: membersData } = await supabase
-          .from('members')
-          .select('user_id, company_id, companies (name)')
-          .in('user_id', userIds)
-          .eq('is_active', true);
-
-        const membersByUserId = (membersData || []).reduce((acc: Record<string, any>, m: any) => {
+        const membersByUserId = (membersRes.data || []).reduce((acc: Record<string, any>, m: any) => {
           if (!acc[m.user_id]) acc[m.user_id] = m;
           return acc;
         }, {} as Record<string, any>);
 
-        // Batch fetch likes for current user
-        const postIds = postsData.map((p: any) => p.id);
-        const { data: likesData } = await supabase
-          .from('post_likes')
-          .select('post_id')
-          .eq('user_id', user.id)
-          .in('post_id', postIds);
-
-        const likedPostIds = new Set(likesData?.map(l => l.post_id) || []);
+        const likedPostIds = new Set(likesRes.data?.map((l: any) => l.post_id) || []);
 
         const postsWithDetails = postsData.map((post: any) => ({
           ...post,
@@ -526,35 +515,31 @@ export default function CompanyFeed() {
 
   const handleLike = async (postId: string, isLiked: boolean) => {
     try {
-      if (isLiked) {
-        await supabase
-          .from('post_likes')
-          .delete()
-          .eq('post_id', postId)
-          .eq('user_id', currentUserId);
+      // Optimistic update
+      setPosts(prev => prev.map(p => p.id === postId
+        ? { ...p, liked_by_user: !isLiked, likes_count: isLiked ? Math.max(0, p.likes_count - 1) : p.likes_count + 1 }
+        : p
+      ));
 
+      if (isLiked) {
+        await supabase.from('post_likes').delete().eq('post_id', postId).eq('user_id', currentUserId);
         const post = posts.find(p => p.id === postId);
         if (post) {
-          await supabase
-            .from('posts')
-            .update({ likes_count: Math.max(0, post.likes_count - 1) })
-            .eq('id', postId);
+          await supabase.from('posts').update({ likes_count: Math.max(0, post.likes_count - 1) }).eq('id', postId);
         }
       } else {
-        await supabase
-          .from('post_likes')
-          .insert([{ post_id: postId, user_id: currentUserId }]);
-
+        await supabase.from('post_likes').insert([{ post_id: postId, user_id: currentUserId }]);
         const post = posts.find(p => p.id === postId);
         if (post) {
-          await supabase
-            .from('posts')
-            .update({ likes_count: post.likes_count + 1 })
-            .eq('id', postId);
+          await supabase.from('posts').update({ likes_count: post.likes_count + 1 }).eq('id', postId);
         }
       }
-      loadPosts();
     } catch (error: any) {
+      // Revert optimistic update
+      setPosts(prev => prev.map(p => p.id === postId
+        ? { ...p, liked_by_user: isLiked, likes_count: isLiked ? p.likes_count + 1 : Math.max(0, p.likes_count - 1) }
+        : p
+      ));
       toast({
         title: 'Error',
         description: 'Failed to update like',
@@ -565,6 +550,8 @@ export default function CompanyFeed() {
 
   const handleDelete = async (postId: string) => {
     try {
+      setPosts(prev => prev.filter(p => p.id !== postId));
+
       const { error } = await supabase
         .from('posts')
         .delete()
@@ -576,8 +563,8 @@ export default function CompanyFeed() {
         title: 'Success',
         description: 'Post deleted successfully',
       });
-      loadPosts();
     } catch (error: any) {
+      loadPosts(); // Revert optimistic removal
       toast({
         title: 'Error',
         description: 'Failed to delete post',
@@ -618,7 +605,7 @@ export default function CompanyFeed() {
         title: 'Success',
         description: 'Post reposted successfully',
       });
-      loadPosts();
+      // Realtime INSERT triggers reload
     } catch (error: any) {
       toast({
         title: 'Error',
@@ -629,7 +616,7 @@ export default function CompanyFeed() {
   };
 
   const handleCommentAdded = async () => {
-    await loadPosts();
+    // Realtime UPDATE pushes comments_count change — no full reload needed
   };
 
   const handleLogout = async () => {

@@ -14,33 +14,36 @@ The complete member invitation system has been successfully implemented with sec
 - **RLS Policies**: Secure access control for admins, association managers, and company admins
 - **Auto-expiry function**: Automatically marks expired invitations
 
-### 2. Backend (Edge Functions) ✅
-Five secure edge functions deployed:
+### 2. Backend ✅
+Three edge functions + two PostgreSQL RPCs:
 
+**Edge Functions (require Auth API or external services):**
 1. **`create-member-invitation`** (JWT required)
    - Generates cryptographically secure 64-character token
    - Stores SHA-256 hash in database (never stores raw token)
    - Sends invitation email via Resend from `noreply@smbconnect.in`
    - Rate limiting: Max 5 invitations per minute per user
 
-2. **`verify-member-invitation`** (Public)
-   - Validates token without consuming it
-   - Returns invitation details for registration form pre-fill
-   - Checks expiry and status
-
-3. **`complete-member-invitation`** (Public)
+2. **`complete-member-invitation`** (Public)
    - Single-use token enforcement
    - Creates Supabase Auth user with auto-confirmed email
    - Creates member/association_manager records
    - Atomic transaction with rollback on failure
 
-4. **`resend-member-invitation`** (JWT required)
+3. **`resend-member-invitation`** (JWT required)
    - Generates new token (invalidates old one)
    - Extends expiry by 48 hours
    - Sends new email
 
-5. **`revoke-member-invitation`** (JWT required)
-   - Marks invitation as revoked
+**PostgreSQL RPCs (replaced edge functions for performance):**
+4. **`verify_member_invitation(p_token)`** (Public RPC)
+   - Validates token without consuming it
+   - Returns invitation details for registration form pre-fill
+   - Checks expiry and status, auto-expires stale invitations
+   - Uses pgcrypto SHA-256 for token hashing
+
+5. **`revoke_member_invitation(p_invitation_id, p_reason)`** (Authenticated RPC)
+   - Atomic revocation with race condition protection
    - Logs reason in audit trail
 
 ### 3. Frontend Components ✅
@@ -235,10 +238,12 @@ Alternative flows:
 
 ### Edge Functions
 - `create-member-invitation` - Create new invitation
-- `verify-member-invitation` - Verify token validity
 - `complete-member-invitation` - Complete registration
 - `resend-member-invitation` - Resend invitation
-- `revoke-member-invitation` - Revoke invitation
+
+### PostgreSQL RPCs
+- `verify_member_invitation(p_token)` - Verify token validity
+- `revoke_member_invitation(p_invitation_id, p_reason)` - Revoke invitation
 
 ### Database Tables
 - `member_invitations` - Invitation records

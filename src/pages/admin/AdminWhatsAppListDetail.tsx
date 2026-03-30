@@ -85,14 +85,25 @@ const AdminWhatsAppListDetail = () => {
     setUploading(true);
     try {
       const text = await file.text();
-      
-      const { data, error } = await supabase.functions.invoke('parse-whatsapp-list', {
-        body: { listId, csvContent: text }
+      const { parseWhatsAppCSV } = await import('@/lib/csvParser');
+      const { recipients, errors: parseErrors } = parseWhatsAppCSV(text);
+
+      if (recipients.length === 0) {
+        throw new Error(parseErrors[0] || 'No valid recipients found in CSV');
+      }
+
+      const { data, error } = await supabase.rpc('import_whatsapp_list_recipients', {
+        p_list_id: listId,
+        p_recipients: recipients,
       });
 
       if (error) throw error;
 
-      toast.success(`Successfully added ${data.count} recipients`);
+      if (parseErrors.length > 0) {
+        console.log('Parse errors:', parseErrors);
+      }
+
+      toast.success(`Successfully added ${data.imported} recipients`);
       loadList();
       loadRecipients();
     } catch (error: any) {

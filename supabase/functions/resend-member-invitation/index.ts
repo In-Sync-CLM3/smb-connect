@@ -7,23 +7,6 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Generate new cryptographically secure token
-function generateToken(): string {
-  const array = new Uint8Array(32);
-  crypto.getRandomValues(array);
-  return Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('');
-}
-
-// SHA-256 hash
-async function hashToken(token: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(token);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-  return Array.from(new Uint8Array(hashBuffer))
-    .map(b => b.toString(16).padStart(2, '0'))
-    .join('');
-}
-
 const handler = async (req: Request): Promise<Response> => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -46,7 +29,7 @@ const handler = async (req: Request): Promise<Response> => {
     // Verify user authentication
     const token = authHeader.replace('Bearer ', '');
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-    
+
     if (authError || !user) {
       throw new Error('Unauthorized');
     }
@@ -58,90 +41,28 @@ const handler = async (req: Request): Promise<Response> => {
       throw new Error('Missing required field: invitation_id');
     }
 
-    console.log('Resending invitation:', invitation_id);
+    // Single RPC call: fetch + verify permissions + update token + get org name + audit
+    // Replaces 6 sequential DB roundtrips
+    const { data: rpcResult, error: rpcError } = await supabase.rpc('resend_member_invitation_db', {
+      p_user_id: user.id,
+      p_invitation_id: invitation_id,
+    });
 
-    // Fetch invitation
-    const { data: invitation, error: inviteError } = await supabase
-      .from('member_invitations')
-      .select('*')
-      .eq('id', invitation_id)
-      .in('status', ['pending', 'expired'])
-      .single();
-
-    if (inviteError || !invitation) {
-      throw new Error('Invitation not found or cannot be resent');
+    if (rpcError) {
+      console.error('RPC error:', rpcError);
+      throw new Error('Failed to resend invitation');
     }
 
-    // Verify user has permission
-    if (invitation.organization_type === 'company') {
-      const { data: memberCheck } = await supabase
-        .from('members')
-        .select('role')
-        .eq('user_id', user.id)
-        .eq('company_id', invitation.organization_id)
-        .in('role', ['owner', 'admin'])
-        .single();
-
-      if (!memberCheck) {
-        throw new Error('Unauthorized: User cannot resend this invitation');
-      }
-    } else if (invitation.organization_type === 'association') {
-      const { data: managerCheck } = await supabase
-        .from('association_managers')
-        .select('id')
-        .eq('user_id', user.id)
-        .eq('association_id', invitation.organization_id)
-        .single();
-
-      if (!managerCheck) {
-        throw new Error('Unauthorized: User cannot resend this invitation');
-      }
+    if (!rpcResult.success) {
+      return new Response(
+        JSON.stringify({ error: rpcResult.error }),
+        { status: rpcResult.status || 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
 
-    // Generate new token
-    const newRawToken = generateToken();
-    const newTokenHash = await hashToken(newRawToken);
-    const newExpiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000);
+    // Send email using raw token from RPC (never persisted in DB)
+    const registrationUrl = `${appUrl}/register?token=${rpcResult.raw_token}&org=${rpcResult.organization_id}`;
 
-    // Update invitation with new token
-    const { error: updateError } = await supabase
-      .from('member_invitations')
-      .update({
-        token_hash: newTokenHash,
-        expires_at: newExpiresAt.toISOString(),
-        status: 'pending',
-      })
-      .eq('id', invitation_id);
-
-    if (updateError) {
-      console.error('Error updating invitation:', updateError);
-      throw updateError;
-    }
-
-    console.log('Invitation updated with new token');
-
-    // Fetch organization name
-    let organizationName = 'the organization';
-    if (invitation.organization_type === 'company') {
-      const { data: company } = await supabase
-        .from('companies')
-        .select('name')
-        .eq('id', invitation.organization_id)
-        .single();
-      if (company) organizationName = company.name;
-    } else {
-      const { data: association } = await supabase
-        .from('associations')
-        .select('name')
-        .eq('id', invitation.organization_id)
-        .single();
-      if (association) organizationName = association.name;
-    }
-
-    // Create new registration URL
-    const registrationUrl = `${appUrl}/register?token=${newRawToken}&org=${invitation.organization_id}`;
-
-    // Resend email
     const emailHtml = `
       <!DOCTYPE html>
       <html>
@@ -162,22 +83,17 @@ const handler = async (req: Request): Promise<Response> => {
               <h1>🔄 Invitation Reminder</h1>
             </div>
             <div class="content">
-              <p>Hello${invitation.first_name ? ' ' + invitation.first_name : ''},</p>
-              
-              <p>This is a reminder about your invitation to join <strong>${organizationName}</strong> on SMB Connect.</p>
-              
+              <p>Hello${rpcResult.first_name ? ' ' + rpcResult.first_name : ''},</p>
+              <p>This is a reminder about your invitation to join <strong>${rpcResult.organization_name}</strong> on SMB Connect.</p>
               <div class="info-box">
-                <p><strong>Role:</strong> ${invitation.role.charAt(0).toUpperCase() + invitation.role.slice(1)}</p>
-                ${invitation.designation ? `<p><strong>Designation:</strong> ${invitation.designation}</p>` : ''}
-                ${invitation.department ? `<p><strong>Department:</strong> ${invitation.department}</p>` : ''}
+                <p><strong>Role:</strong> ${rpcResult.role.charAt(0).toUpperCase() + rpcResult.role.slice(1)}</p>
+                ${rpcResult.designation ? `<p><strong>Designation:</strong> ${rpcResult.designation}</p>` : ''}
+                ${rpcResult.department ? `<p><strong>Department:</strong> ${rpcResult.department}</p>` : ''}
               </div>
-              
               <p>We've generated a new registration link for you. This invitation expires in <strong>48 hours</strong>.</p>
-              
               <div style="text-align: center;">
                 <a href="${registrationUrl}" class="button">Complete Registration</a>
               </div>
-              
               <p style="margin-top: 30px; font-size: 12px; color: #666;">
                 If the button doesn't work, copy and paste this link into your browser:<br>
                 <a href="${registrationUrl}">${registrationUrl}</a>
@@ -192,34 +108,19 @@ const handler = async (req: Request): Promise<Response> => {
     `;
 
     try {
-      const emailResponse = await resend.emails.send({
+      await resend.emails.send({
         from: 'SMB Connect <noreply@smbconnect.in>',
-        to: [invitation.email],
-        subject: `Reminder: Join ${organizationName} on SMB Connect`,
+        to: [rpcResult.invitation_email],
+        subject: `Reminder: Join ${rpcResult.organization_name} on SMB Connect`,
         html: emailHtml,
       });
-
-      console.log('Email resent successfully:', emailResponse);
     } catch (emailError) {
       console.error('Error sending email:', emailError);
       throw new Error('Failed to send email');
     }
 
-    // Log audit trail
-    await supabase
-      .from('member_invitation_audit')
-      .insert({
-        invitation_id: invitation_id,
-        action: 'resent',
-        performed_by: user.id,
-        notes: 'Invitation resent with new token'
-      });
-
     return new Response(
-      JSON.stringify({
-        success: true,
-        message: 'Invitation resent successfully'
-      }),
+      JSON.stringify({ success: true, message: 'Invitation resent successfully' }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
 

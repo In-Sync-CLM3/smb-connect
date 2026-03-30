@@ -90,14 +90,16 @@ export default function CompanyEmailListDetail() {
     setUploading(true);
     try {
       const fileContent = await file.text();
-      const base64Content = btoa(fileContent);
+      const { parseEmailCSV } = await import('@/lib/csvParser');
+      const { recipients, errors: parseErrors } = parseEmailCSV(fileContent);
 
-      const { data, error } = await supabase.functions.invoke('parse-email-list', {
-        body: {
-          listId,
-          fileContent: base64Content,
-          fileName: file.name,
-        },
+      if (recipients.length === 0) {
+        throw new Error(parseErrors[0] || 'No valid recipients found');
+      }
+
+      const { data, error } = await supabase.rpc('import_email_list_recipients', {
+        p_list_id: listId,
+        p_recipients: recipients,
       });
 
       if (error) throw error;
@@ -107,11 +109,12 @@ export default function CompanyEmailListDetail() {
         description: `Imported ${data.imported} recipients`,
       });
 
-      if (data.errors && data.errors.length > 0) {
-        console.log('Import errors:', data.errors);
+      const allErrors = [...parseErrors, ...(data.errors || []).filter((e: string) => e)];
+      if (allErrors.length > 0) {
+        console.log('Import errors:', allErrors);
         toast({
           title: 'Warning',
-          description: `${data.errors.length} rows had errors. Check console for details.`,
+          description: `${allErrors.length} rows had errors. Check console for details.`,
           variant: 'destructive',
         });
       }

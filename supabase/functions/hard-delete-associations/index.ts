@@ -32,11 +32,8 @@ Deno.serve(async (req) => {
 
     // Get current user using the JWT token
     const { data: { user }, error: userError } = await supabaseClient.auth.getUser(token);
-    
-    console.log('User check:', { userId: user?.id, userEmail: user?.email, error: userError?.message });
-    
+
     if (userError || !user) {
-      console.error('User authentication failed:', userError);
       return new Response(
         JSON.stringify({ error: 'Unauthorized', details: userError?.message }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 401 }
@@ -60,18 +57,12 @@ Deno.serve(async (req) => {
     }
 
     // Verify password (requires Auth API — cannot be done in PostgreSQL)
-    const authTestClient = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_ANON_KEY') ?? ''
-    );
-
-    const { error: authError } = await authTestClient.auth.signInWithPassword({
+    const { error: authError } = await supabaseClient.auth.signInWithPassword({
       email: user.email!,
       password: password
     });
 
     if (authError) {
-      console.error('Password verification failed:', authError.message);
       return new Response(
         JSON.stringify({ error: 'Invalid password' }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 401 }
@@ -93,8 +84,6 @@ Deno.serve(async (req) => {
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 403 }
       );
     }
-
-    console.log(`Hard deletion complete: ${data.success} deleted, ${data.failed} failed`);
 
     return new Response(
       JSON.stringify(data),

@@ -63,6 +63,7 @@ const EventLandingPageView = () => {
   const [registrationMessage, setRegistrationMessage] = useState<string>('');
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const registrationInFlight = useRef(false);
+  const landingPageRef = useRef<LandingPageData | null>(null);
 
   useEffect(() => {
     const fetchLandingPage = async () => {
@@ -76,6 +77,7 @@ const EventLandingPageView = () => {
       const cached = getCachedPage(slug, subPage || '');
       if (cached) {
         setLandingPage(cached);
+        landingPageRef.current = cached;
         setLoading(false);
       }
 
@@ -99,6 +101,7 @@ const EventLandingPageView = () => {
         }
 
         setLandingPage(pageData);
+        landingPageRef.current = pageData;
         setCachedPage(slug, subPage || '', pageData);
       } catch (err) {
         console.error('Error fetching landing page:', err);
@@ -117,18 +120,12 @@ const EventLandingPageView = () => {
       if (event.data?.type === 'event-registration') {
         const formData = event.data.data;
 
-        console.log('[SMB Registration] Received from iframe:', formData);
-
-        if (!landingPage) {
-          console.error('[SMB Registration] No landing page data available');
-          return;
-        }
+        // Use ref to avoid stale closure over landingPage state
+        const currentPage = landingPageRef.current;
+        if (!currentPage) return;
 
         // Prevent duplicate submissions (race condition: iframe can fire multiple messages)
-        if (registrationInFlight.current) {
-          console.log('[SMB Registration] Ignoring duplicate submission — already in flight');
-          return;
-        }
+        if (registrationInFlight.current) return;
         registrationInFlight.current = true;
 
         setRegistrationStatus('submitting');
@@ -142,7 +139,7 @@ const EventLandingPageView = () => {
           const utmCampaign = urlParams.get('utm_campaign');
 
           const requestBody = {
-            landing_page_id: landingPage.id,
+            landing_page_id: currentPage.id,
             email: formData.email,
             first_name: formData.first_name || '',
             last_name: formData.last_name || '',
@@ -154,8 +151,6 @@ const EventLandingPageView = () => {
             utm_campaign: utmCampaign
           };
           
-          console.log('[SMB Registration] Sending to edge function:', requestBody);
-          
           const response = await fetch(
             `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/process-event-registration`,
             {
@@ -166,13 +161,10 @@ const EventLandingPageView = () => {
           );
 
           const result = await response.json();
-          
-          console.log('[SMB Registration] Response:', response.status, result);
 
           if (!response.ok) {
             setRegistrationStatus('error');
             setRegistrationMessage(result.error || result.message || 'Registration failed. Please try again.');
-            console.error('[SMB Registration] Error:', result);
             return;
           }
 
@@ -185,7 +177,6 @@ const EventLandingPageView = () => {
             '*'
           );
         } catch (err) {
-          console.error('[SMB Registration] Exception:', err);
           setRegistrationStatus('error');
           const errorMsg = 'An error occurred during registration. Please try again.';
           setRegistrationMessage(errorMsg);
@@ -202,7 +193,7 @@ const EventLandingPageView = () => {
 
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, [landingPage]);
+  }, []);
 
   // Inject CSS and the form interception script into the HTML
   const getEnhancedHtml = (html: string, cssContent?: string | null, pages?: PageInfo[], registrationFee?: number | null, pageId?: string): string => {

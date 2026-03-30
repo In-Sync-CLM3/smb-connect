@@ -28,7 +28,10 @@ const getNotificationIcon = (type: string) => {
     case 'post_comment':
       return <MessageCircle className="h-4 w-4 text-blue-500" />;
     case 'association_post':
+    case 'company_post':
       return <Building2 className="h-4 w-4 text-primary" />;
+    case 'member_post':
+      return <UserPlus className="h-4 w-4 text-blue-500" />;
     default:
       return <Bell className="h-4 w-4 text-muted-foreground" />;
   }

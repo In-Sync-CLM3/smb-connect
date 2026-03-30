@@ -135,7 +135,7 @@ export function usePosts() {
 
       if (likeError) throw likeError;
 
-      await loadPosts();
+      // Realtime subscription handles count updates
       return { error: null };
     } catch (err) {
       return { error: err as Error };
@@ -152,7 +152,7 @@ export function usePosts() {
 
       if (unlikeError) throw unlikeError;
 
-      await loadPosts();
+      // Realtime subscription handles count updates
       return { error: null };
     } catch (err) {
       return { error: err as Error };

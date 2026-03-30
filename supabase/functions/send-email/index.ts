@@ -43,31 +43,6 @@ serve(async (req) => {
       conversationId: emailData.conversationId
     });
 
-    // Create or update conversation
-    let conversationId = emailData.conversationId;
-
-    if (!conversationId) {
-      const { data: newConv, error: convError } = await supabase
-        .from('email_conversations')
-        .insert({
-          subject: emailData.subject,
-          sender_type: emailData.senderType,
-          sender_id: emailData.senderId,
-          recipient_type: emailData.recipientType,
-          recipient_id: emailData.recipientId,
-        })
-        .select()
-        .single();
-
-      if (convError) throw convError;
-      conversationId = newConv.id;
-    } else {
-      await supabase
-        .from('email_conversations')
-        .update({ last_message_at: new Date().toISOString() })
-        .eq('id', conversationId);
-    }
-
     // Send email via Resend API
     const resendResponse = await fetch('https://api.resend.com/emails', {
       method: 'POST',
@@ -83,7 +58,7 @@ serve(async (req) => {
         text: emailData.bodyText || emailData.bodyHtml.replace(/<[^>]*>/g, ''),
         reply_to: emailData.senderEmail,
         headers: {
-          'X-Conversation-ID': conversationId,
+          'X-Conversation-ID': emailData.conversationId || '',
           'X-Sender-Type': emailData.senderType,
           'X-Sender-ID': emailData.senderId,
         },
@@ -99,29 +74,32 @@ serve(async (req) => {
     const resendResult = await resendResponse.json();
     console.log('Email sent via Resend:', resendResult);
 
-    // Store message in database
-    const { error: msgError } = await supabase
-      .from('email_messages')
-      .insert({
-        conversation_id: conversationId,
-        sender_email: emailData.senderEmail,
-        recipient_email: emailData.recipientEmail,
-        subject: emailData.subject,
-        body_html: emailData.bodyHtml,
-        body_text: emailData.bodyText,
-        direction: 'outbound',
-        external_message_id: resendResult.id || null,
-        sender_name: emailData.senderName,
-      });
+    // ============================================================
+    // Store conversation + message via RPC (2 DB roundtrips → 1)
+    // ============================================================
+    const { data: storeResult, error: storeError } = await supabase.rpc('store_email_conversation', {
+      p_conversation_id: emailData.conversationId || null,
+      p_subject: emailData.subject,
+      p_sender_type: emailData.senderType,
+      p_sender_id: emailData.senderId,
+      p_recipient_type: emailData.recipientType,
+      p_recipient_id: emailData.recipientId,
+      p_sender_email: emailData.senderEmail,
+      p_recipient_email: emailData.recipientEmail,
+      p_body_html: emailData.bodyHtml,
+      p_body_text: emailData.bodyText || emailData.bodyHtml.replace(/<[^>]*>/g, ''),
+      p_sender_name: emailData.senderName,
+      p_external_message_id: resendResult.id || null,
+    });
 
-    if (msgError) {
-      console.error('Failed to store message:', msgError);
+    if (storeError) {
+      console.error('Failed to store conversation:', storeError);
     }
 
     return new Response(
       JSON.stringify({
         success: true,
-        conversationId,
+        conversationId: storeResult?.conversation_id || emailData.conversationId,
         messageId: resendResult.id
       }),
       {

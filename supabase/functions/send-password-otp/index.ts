@@ -19,7 +19,6 @@ serve(async (req) => {
     }
 
     const email = rawEmail.trim().toLowerCase()
-    console.log('Generating OTP for normalized email:', email)
 
     // Create Supabase client with service role
     const supabaseAdmin = createClient(
@@ -36,7 +35,6 @@ serve(async (req) => {
     // Note: We don't check if user exists here to avoid pagination issues with auth.admin.listUsers()
     // and to maintain security by not revealing whether an email is registered.
     // The verify-password-otp function will validate the user exists when they submit the OTP.
-    console.log('Processing password reset request for:', email)
 
     // Generate 6-digit OTP
     const otp = Math.floor(100000 + Math.random() * 900000).toString()
@@ -50,11 +48,8 @@ serve(async (req) => {
       })
 
     if (insertError) {
-      console.error('Failed to store OTP:', insertError)
       throw new Error('Failed to generate verification code')
     }
-
-    console.log('OTP stored successfully, sending email...')
 
     // Send email via Resend API directly
     const htmlContent = `
@@ -148,13 +143,8 @@ serve(async (req) => {
     })
 
     if (!resendResponse.ok) {
-      const errorText = await resendResponse.text()
-      console.error('Failed to send email:', errorText)
       throw new Error('Failed to send verification email')
     }
-
-    const resendData = await resendResponse.json()
-    console.log('Password reset OTP email sent successfully:', resendData)
 
     return new Response(
       JSON.stringify({ success: true }),
@@ -162,7 +152,6 @@ serve(async (req) => {
     )
 
   } catch (error: any) {
-    console.error('Error in send-password-otp:', error)
     return new Response(
       JSON.stringify({ error: error.message }),
       { 

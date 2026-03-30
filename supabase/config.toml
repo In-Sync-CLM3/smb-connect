@@ -21,16 +21,10 @@ verify_jwt = false
 [functions.create-member-invitation]
 verify_jwt = true
 
-[functions.verify-member-invitation]
-verify_jwt = false
-
 [functions.complete-member-invitation]
 verify_jwt = false
 
 [functions.resend-member-invitation]
-verify_jwt = true
-
-[functions.revoke-member-invitation]
 verify_jwt = true
 
 [functions.accept-company-invitation]
@@ -39,13 +33,7 @@ verify_jwt = false
 [functions.fetch-link-preview]
 verify_jwt = false
 
-[functions.get-landing-page]
-verify_jwt = false
-
 [functions.process-event-registration]
-verify_jwt = false
-
-[functions.validate-coupon]
 verify_jwt = false
 
 [functions.send-whatsapp]
@@ -61,9 +49,6 @@ verify_jwt = true
 verify_jwt = true
 
 [functions.receive-email-events]
-verify_jwt = false
-
-[functions.verify-company-invitation]
 verify_jwt = false
 
 [functions.parse-email-list]
