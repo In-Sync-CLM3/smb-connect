@@ -14,7 +14,7 @@ import { useToast } from '@/hooks/use-toast';
 import { ArrowLeft } from 'lucide-react';
 
 const companySchema = z.object({
-  association_id: z.string().optional(),
+  association_id: z.string().min(1, 'Association is required'),
   name: z.string().min(2, 'Name must be at least 2 characters'),
   description: z.string().optional(),
   email: z.string().email('Invalid email address'),
@@ -141,10 +141,10 @@ export default function CreateCompany() {
           <CardContent>
             <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
               <div>
-                <Label htmlFor="association_id">Association</Label>
+                <Label htmlFor="association_id">Association *</Label>
                 <Select onValueChange={(value) => setValue('association_id', value)} disabled={loading}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Select association (optional)" />
+                    <SelectValue placeholder="Select association" />
                   </SelectTrigger>
                   <SelectContent>
                     {associations.map((assoc) => (
