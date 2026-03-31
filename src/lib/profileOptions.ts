@@ -131,6 +131,7 @@ export const JOB_TITLES = [
   "Customer Success Manager",
   "Consultant",
   "CEO/Founder",
+  "Director",
 ];
 
 export const INDIAN_CITIES = [
