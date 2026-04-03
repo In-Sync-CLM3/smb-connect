@@ -45,6 +45,8 @@ const getLastMessagePreview = (lastMsg: { content: string | null; attachments: a
 interface FloatingChatProps {
   currentUserId: string | null;
   initialChatId?: string | null;
+  requestOpen?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
 interface Conversation {
@@ -55,7 +57,7 @@ interface Conversation {
   avatar?: string;
 }
 
-export function FloatingChat({ currentUserId, initialChatId }: FloatingChatProps) {
+export function FloatingChat({ currentUserId, initialChatId, requestOpen, onOpenChange }: FloatingChatProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
   const [selectedChatId, setSelectedChatId] = useState<string | null>(initialChatId || null);
@@ -70,12 +72,13 @@ export function FloatingChat({ currentUserId, initialChatId }: FloatingChatProps
   }, [isOpen, currentUserId]);
 
   useEffect(() => {
-    if (initialChatId && !isOpen) {
+    if (requestOpen && initialChatId) {
       setSelectedChatId(initialChatId);
       setIsOpen(true);
       setShowConversationList(false);
+      onOpenChange?.(false);
     }
-  }, [initialChatId]);
+  }, [requestOpen, initialChatId]);
 
   const loadConversations = async () => {
     try {

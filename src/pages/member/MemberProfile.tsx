@@ -157,6 +157,7 @@ export default function MemberProfile() {
   const [connectionId, setConnectionId] = useState<string | null>(null);
   const [isReceiver, setIsReceiver] = useState(false);
   const [chatId, setChatId] = useState<string | null>(null);
+  const [chatOpen, setChatOpen] = useState(false);
   const [connectionCount, setConnectionCount] = useState(0);
   const [activeTab, setActiveTab] = useState<'posts' | 'saved' | 'about'>('posts');
   const [userPosts, setUserPosts] = useState<ProfilePost[]>([]);
@@ -495,6 +496,7 @@ export default function MemberProfile() {
     try {
       if (chatId) {
         // Chat already exists, just open it
+        setChatOpen(true);
         return;
       }
 
@@ -546,6 +548,7 @@ export default function MemberProfile() {
       if (participantError) throw participantError;
 
       setChatId(newChat.id);
+      setChatOpen(true);
       toast({
         title: 'Success',
         description: 'Chat created',
@@ -702,23 +705,30 @@ export default function MemberProfile() {
         .getPublicUrl(fileName);
 
       const updateField = type === 'avatar' ? 'avatar' : 'cover_image';
-      const { error: updateError } = await supabase
+      const { data: updatedProfile, error: updateError } = await supabase
         .from('profiles')
         .update({ [updateField]: publicUrl })
-        .eq('id', currentUser);
+        .eq('id', currentUser)
+        .select()
+        .single();
 
       if (updateError) throw updateError;
+
+      if (!updatedProfile?.[updateField]) {
+        throw new Error('Photo update was not saved. Please try again.');
+      }
 
       toast({
         title: 'Success',
         description: `${type === 'avatar' ? 'Profile' : 'Cover'} photo updated`,
       });
 
-      loadProfile();
+      await refreshProfile();
     } catch (error: any) {
+      console.error('Image upload error:', error);
       toast({
         title: 'Error',
-        description: 'Failed to upload image',
+        description: error.message || 'Failed to upload image',
         variant: 'destructive',
       });
     } finally {
@@ -1707,7 +1717,7 @@ export default function MemberProfile() {
 
       {/* Floating Chat Widget */}
       {!isOwnProfile && connectionStatus === 'connected' && (
-        <FloatingChat currentUserId={currentUser} initialChatId={chatId} />
+        <FloatingChat currentUserId={currentUser} initialChatId={chatId} requestOpen={chatOpen} onOpenChange={setChatOpen} />
       )}
       
       <MobileNavigation />
