@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -130,12 +130,13 @@ export function EditAssociationProfileDialog({
 
       const fileExt = file.name.split('.').pop();
       const fileName = `${type}-${Date.now()}.${fileExt}`;
+      const bucket = type === 'logo' ? 'association-logos' : 'profile-images';
       
-      // Use user's ID as folder to match RLS policy: auth.uid()::text = (storage.foldername(name))[1]
+      // Cover uploads use user-scoped folders. Association logos use a dedicated bucket.
       const filePath = `${user.id}/${fileName}`;
 
       const { error: uploadError } = await supabase.storage
-        .from('profile-images')
+        .from(bucket)
         .upload(filePath, file, { upsert: true });
 
       if (uploadError) {
@@ -144,7 +145,7 @@ export function EditAssociationProfileDialog({
       }
 
       const { data } = supabase.storage
-        .from('profile-images')
+        .from(bucket)
         .getPublicUrl(filePath);
 
       return data.publicUrl;
@@ -163,6 +164,7 @@ export function EditAssociationProfileDialog({
     register,
     handleSubmit,
     control,
+    reset,
     formState: { errors },
   } = useForm<ProfileFormData>({
     resolver: zodResolver(profileSchema),
@@ -187,18 +189,44 @@ export function EditAssociationProfileDialog({
     },
   });
 
+  useEffect(() => {
+    if (!open) return;
+
+    setLogoFile(null);
+    setCoverFile(null);
+    setLogoPreview(association.logo || null);
+    setCoverPreview(association.cover_image || null);
+    reset({
+      name: association.name,
+      description: association.description || '',
+      contact_email: association.contact_email,
+      contact_phone: association.contact_phone || '',
+      website: association.website || '',
+      address: association.address || '',
+      city: association.city || '',
+      state: association.state || '',
+      country: association.country || 'India',
+      postal_code: association.postal_code || '',
+      founded_year: association.founded_year?.toString() || '',
+      industry: association.industry || undefined,
+      keywords: association.keywords?.join(', ') || '',
+      linkedin: socialLinks.linkedin || '',
+      twitter: socialLinks.twitter || '',
+      facebook: socialLinks.facebook || '',
+      instagram: socialLinks.instagram || '',
+    });
+  }, [open, association, reset, socialLinks.linkedin, socialLinks.twitter, socialLinks.facebook, socialLinks.instagram]);
+
   const onSubmit = async (data: ProfileFormData) => {
     try {
       setLoading(true);
 
-      // Upload images if changed
-      let logoUrl = association.logo;
-      let coverUrl = association.cover_image;
+      const updates: Record<string, unknown> = {};
 
       if (logoFile) {
         const uploadedUrl = await uploadImage(logoFile, 'logo');
         if (uploadedUrl) {
-          logoUrl = uploadedUrl;
+          updates.logo = uploadedUrl;
         } else {
           setLoading(false);
           return;
@@ -208,7 +236,7 @@ export function EditAssociationProfileDialog({
       if (coverFile) {
         const uploadedUrl = await uploadImage(coverFile, 'cover');
         if (uploadedUrl) {
-          coverUrl = uploadedUrl;
+          updates.cover_image = uploadedUrl;
         } else {
           setLoading(false);
           return;
@@ -227,26 +255,43 @@ export function EditAssociationProfileDialog({
       if (data.facebook) socialLinksObj.facebook = data.facebook;
       if (data.instagram) socialLinksObj.instagram = data.instagram;
 
+      const nextDescription = data.description || '';
+      const nextContactPhone = data.contact_phone || '';
+      const nextWebsite = data.website || '';
+      const nextAddress = data.address || '';
+      const nextCity = data.city || '';
+      const nextState = data.state || '';
+      const nextCountry = data.country || 'India';
+      const nextPostalCode = data.postal_code || '';
+      const nextFoundedYear = data.founded_year ? parseInt(data.founded_year) : null;
+      const nextIndustry = data.industry || null;
+      const currentSocialLinks = association.social_links || {};
+
+      if (data.name !== association.name) updates.name = data.name;
+      if (nextDescription !== (association.description || '')) updates.description = nextDescription;
+      if (data.contact_email !== association.contact_email) updates.contact_email = data.contact_email;
+      if (nextContactPhone !== (association.contact_phone || '')) updates.contact_phone = nextContactPhone;
+      if (nextWebsite !== (association.website || '')) updates.website = nextWebsite;
+      if (nextAddress !== (association.address || '')) updates.address = nextAddress;
+      if (nextCity !== (association.city || '')) updates.city = nextCity;
+      if (nextState !== (association.state || '')) updates.state = nextState;
+      if (nextCountry !== (association.country || 'India')) updates.country = nextCountry;
+      if (nextPostalCode !== (association.postal_code || '')) updates.postal_code = nextPostalCode;
+      if (nextFoundedYear !== (association.founded_year ?? null)) updates.founded_year = nextFoundedYear;
+      if (nextIndustry !== (association.industry || null)) updates.industry = nextIndustry;
+      if (JSON.stringify(keywordsArray) !== JSON.stringify(association.keywords || [])) updates.keywords = keywordsArray;
+      if (JSON.stringify(socialLinksObj) !== JSON.stringify(currentSocialLinks)) updates.social_links = socialLinksObj;
+
+      if (Object.keys(updates).length === 0) {
+        setLogoFile(null);
+        setCoverFile(null);
+        onOpenChange(false);
+        return;
+      }
+
       const { error } = await supabase
         .from('associations')
-        .update({
-          name: data.name,
-          description: data.description,
-          contact_email: data.contact_email,
-          contact_phone: data.contact_phone,
-          website: data.website,
-          address: data.address,
-          city: data.city,
-          state: data.state,
-          country: data.country,
-          postal_code: data.postal_code,
-          founded_year: data.founded_year ? parseInt(data.founded_year) : null,
-          industry: data.industry || null,
-          keywords: keywordsArray,
-          social_links: socialLinksObj,
-          logo: logoUrl,
-          cover_image: coverUrl,
-        } as any)
+        .update(updates as any)
         .eq('id', association.id);
 
       if (error) throw error;

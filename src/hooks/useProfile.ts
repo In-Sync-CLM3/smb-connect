@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 
 interface ProfileData {
@@ -26,18 +26,28 @@ export function useProfile(userId: string | null | undefined) {
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
+  const latestUserIdRef = useRef<string | null | undefined>(userId);
+  const requestIdRef = useRef(0);
+
+  useEffect(() => {
+    latestUserIdRef.current = userId;
+  }, [userId]);
 
   useEffect(() => {
     if (!userId) {
+      setProfile(null);
+      setError(null);
       setLoading(false);
       return;
     }
 
-    loadProfile();
+    loadProfile(userId);
   }, [userId]);
 
-  const loadProfile = async () => {
-    if (!userId) return;
+  const loadProfile = async (targetUserId = latestUserIdRef.current) => {
+    if (!targetUserId) return;
+
+    const requestId = ++requestIdRef.current;
 
     try {
       setLoading(true);
@@ -46,17 +56,27 @@ export function useProfile(userId: string | null | undefined) {
       const { data, error: fetchError } = await supabase
         .from('profiles')
         .select('*')
-        .eq('id', userId)
+        .eq('id', targetUserId)
         .maybeSingle();
 
       if (fetchError) throw fetchError;
-      
+
+      if (requestId !== requestIdRef.current || targetUserId !== latestUserIdRef.current) {
+        return;
+      }
+
       setProfile(data);
     } catch (err) {
+      if (requestId !== requestIdRef.current || targetUserId !== latestUserIdRef.current) {
+        return;
+      }
+
       setError(err as Error);
       setProfile(null);
     } finally {
-      setLoading(false);
+      if (requestId === requestIdRef.current && targetUserId === latestUserIdRef.current) {
+        setLoading(false);
+      }
     }
   };
 
@@ -71,7 +91,7 @@ export function useProfile(userId: string | null | undefined) {
 
       if (updateError) throw updateError;
 
-      await loadProfile();
+      await loadProfile(userId);
       return { error: null };
     } catch (err) {
       return { error: err as Error };

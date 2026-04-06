@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useProfile } from '@/hooks/useProfile';
@@ -165,8 +165,24 @@ export default function MemberProfile() {
   const [showComments, setShowComments] = useState<Set<string>>(new Set());
   const [savedPosts, setSavedPosts] = useState<SavedPostWithAuthor[]>([]);
   const [savedPostsLoading, setSavedPostsLoading] = useState(false);
+  const [creatingChat, setCreatingChat] = useState(false);
+  const latestUserIdRef = useRef(userId);
+  const latestCurrentUserRef = useRef(currentUser);
+  const profileLoadRequestIdRef = useRef(0);
+  const postsLoadRequestIdRef = useRef(0);
+  const savedPostsRequestIdRef = useRef(0);
+  const connectionRequestIdRef = useRef(0);
+  const chatCreationInFlightRef = useRef(false);
 
   const isOwnProfile = currentUser === userId;
+
+  useEffect(() => {
+    latestUserIdRef.current = userId;
+  }, [userId]);
+
+  useEffect(() => {
+    latestCurrentUserRef.current = currentUser;
+  }, [currentUser]);
 
   useEffect(() => {
     loadCurrentUser();
@@ -183,7 +199,9 @@ export default function MemberProfile() {
 
   const loadSavedPosts = async () => {
     if (!currentUser) return;
-    
+    const requestId = ++savedPostsRequestIdRef.current;
+    const currentUserId = currentUser;
+
     try {
       setSavedPostsLoading(true);
       
@@ -197,7 +215,9 @@ export default function MemberProfile() {
       if (bookmarkError) throw bookmarkError;
       
       if (!bookmarks || bookmarks.length === 0) {
-        setSavedPosts([]);
+        if (requestId === savedPostsRequestIdRef.current && currentUserId === latestCurrentUserRef.current) {
+          setSavedPosts([]);
+        }
         return;
       }
 
@@ -246,11 +266,15 @@ export default function MemberProfile() {
           author: authorsMap.get(post!.user_id) || null
         }));
 
-      setSavedPosts(orderedPosts);
+      if (requestId === savedPostsRequestIdRef.current && currentUserId === latestCurrentUserRef.current) {
+        setSavedPosts(orderedPosts);
+      }
     } catch (error: any) {
       console.error('Error loading saved posts:', error);
     } finally {
-      setSavedPostsLoading(false);
+      if (requestId === savedPostsRequestIdRef.current && currentUserId === latestCurrentUserRef.current) {
+        setSavedPostsLoading(false);
+      }
     }
   };
 
@@ -262,7 +286,9 @@ export default function MemberProfile() {
 
   const loadUserPosts = async () => {
     if (!userId) return;
-    
+    const requestId = ++postsLoadRequestIdRef.current;
+    const targetUserId = userId;
+
     try {
       setPostsLoading(true);
       
@@ -274,7 +300,7 @@ export default function MemberProfile() {
       const { data: postsData, error } = await supabase
         .from('posts')
         .select('*')
-        .eq('user_id', userId)
+        .eq('user_id', targetUserId)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -296,11 +322,15 @@ export default function MemberProfile() {
         user_liked: likedPostIds.includes(post.id)
       }));
 
-      setUserPosts(postsWithLikeStatus);
+      if (requestId === postsLoadRequestIdRef.current && targetUserId === latestUserIdRef.current) {
+        setUserPosts(postsWithLikeStatus);
+      }
     } catch (error: any) {
       console.error('Error loading posts:', error);
     } finally {
-      setPostsLoading(false);
+      if (requestId === postsLoadRequestIdRef.current && targetUserId === latestUserIdRef.current) {
+        setPostsLoading(false);
+      }
     }
   };
 
@@ -413,12 +443,16 @@ export default function MemberProfile() {
   };
 
   const checkConnectionStatus = async () => {
+    const requestId = ++connectionRequestIdRef.current;
+    const currentViewerId = currentUser;
+    const targetUserId = userId;
+
     try {
       // Get both members with company_id (use limit(1) to handle duplicate member records)
       const { data: currentMembers } = await supabase
         .from('members')
         .select('id, company_id')
-        .eq('user_id', currentUser)
+        .eq('user_id', currentViewerId)
         .eq('is_active', true)
         .limit(1);
       const currentMember = currentMembers?.[0] || null;
@@ -426,12 +460,13 @@ export default function MemberProfile() {
       const { data: otherMembers } = await supabase
         .from('members')
         .select('id, company_id')
-        .eq('user_id', userId)
+        .eq('user_id', targetUserId)
         .eq('is_active', true)
         .limit(1);
       const otherMember = otherMembers?.[0] || null;
 
       if (!currentMember || !otherMember) return;
+      if (requestId !== connectionRequestIdRef.current || currentViewerId !== latestCurrentUserRef.current || targetUserId !== latestUserIdRef.current) return;
 
       // Check connection status
       const { data: connection } = await supabase
@@ -441,6 +476,7 @@ export default function MemberProfile() {
         .maybeSingle();
 
       if (connection && (connection.status === 'accepted' || connection.status === 'pending')) {
+        if (requestId !== connectionRequestIdRef.current || currentViewerId !== latestCurrentUserRef.current || targetUserId !== latestUserIdRef.current) return;
         setConnectionId(connection.id);
         // Check if current user is the receiver
         setIsReceiver(connection.receiver_id === currentMember.id);
@@ -453,6 +489,7 @@ export default function MemberProfile() {
           setConnectionStatus('pending');
         }
       } else {
+        if (requestId !== connectionRequestIdRef.current || currentViewerId !== latestCurrentUserRef.current || targetUserId !== latestUserIdRef.current) return;
         setConnectionStatus('none');
         setConnectionId(null);
         setIsReceiver(false);
@@ -483,17 +520,24 @@ export default function MemberProfile() {
           const otherParticipant = participants.find(p => p.member_id !== currentMemberId);
           if (otherParticipant?.member_id === otherMemberId) {
             setChatId(chat.chat_id);
-            return;
+            return chat.chat_id;
           }
         }
       }
     } catch (error) {
       console.error('Error finding chat:', error);
     }
+
+    return null;
   };
 
   const handleStartMessage = async () => {
+    if (chatCreationInFlightRef.current) return;
+
     try {
+      chatCreationInFlightRef.current = true;
+      setCreatingChat(true);
+
       if (chatId) {
         // Chat already exists, just open it
         setChatOpen(true);
@@ -523,6 +567,13 @@ export default function MemberProfile() {
           description: 'Unable to find member information',
           variant: 'destructive',
         });
+        return;
+      }
+
+      const existingChatId = await findExistingChat(currentMember.id, otherMember.id);
+      if (existingChatId) {
+        setChatId(existingChatId);
+        setChatOpen(true);
         return;
       }
 
@@ -559,15 +610,22 @@ export default function MemberProfile() {
         description: 'Failed to create chat',
         variant: 'destructive',
       });
+    } finally {
+      chatCreationInFlightRef.current = false;
+      setCreatingChat(false);
     }
   };
 
   const loadProfile = async () => {
+    const requestId = ++profileLoadRequestIdRef.current;
+    const targetUserId = userId;
+
     try {
       setLoading(true);
 
       // Refresh profile from the hook
       await refreshProfile();
+      if (requestId !== profileLoadRequestIdRef.current || targetUserId !== latestUserIdRef.current) return;
 
       // Load work experience
       const { data: workData } = await supabase
@@ -576,6 +634,7 @@ export default function MemberProfile() {
         .eq('user_id', userId)
         .order('is_current', { ascending: false })
         .order('start_date', { ascending: false });
+      if (requestId !== profileLoadRequestIdRef.current || targetUserId !== latestUserIdRef.current) return;
       setWorkExperience(workData || []);
 
       // Load education
@@ -584,6 +643,7 @@ export default function MemberProfile() {
         .select('*')
         .eq('user_id', userId)
         .order('start_date', { ascending: false });
+      if (requestId !== profileLoadRequestIdRef.current || targetUserId !== latestUserIdRef.current) return;
       setEducation(eduData || []);
 
       // Load skills
@@ -592,6 +652,7 @@ export default function MemberProfile() {
         .select('*')
         .eq('user_id', userId)
         .order('endorsements_count', { ascending: false });
+      if (requestId !== profileLoadRequestIdRef.current || targetUserId !== latestUserIdRef.current) return;
       setSkills(skillsData || []);
 
       // Load certifications
@@ -600,6 +661,7 @@ export default function MemberProfile() {
         .select('*')
         .eq('user_id', userId)
         .order('issue_date', { ascending: false });
+      if (requestId !== profileLoadRequestIdRef.current || targetUserId !== latestUserIdRef.current) return;
       setCertifications(certsData || []);
 
       // Load associations - both direct (as manager) and indirect (via company)
@@ -637,7 +699,10 @@ export default function MemberProfile() {
           .eq('is_active', true)
           .order('name');
         
+        if (requestId !== profileLoadRequestIdRef.current || targetUserId !== latestUserIdRef.current) return;
         setAssociations(associationsData || []);
+      } else if (requestId === profileLoadRequestIdRef.current && targetUserId === latestUserIdRef.current) {
+        setAssociations([]);
       }
 
       // Load connection count (use limit(1) to handle duplicate member records)
@@ -656,17 +721,23 @@ export default function MemberProfile() {
           .eq('status', 'accepted')
           .or(`sender_id.eq.${userMember.id},receiver_id.eq.${userMember.id}`);
         
+        if (requestId !== profileLoadRequestIdRef.current || targetUserId !== latestUserIdRef.current) return;
         setConnectionCount(count || 0);
+      } else if (requestId === profileLoadRequestIdRef.current && targetUserId === latestUserIdRef.current) {
+        setConnectionCount(0);
       }
 
     } catch (error: any) {
+      if (requestId !== profileLoadRequestIdRef.current || targetUserId !== latestUserIdRef.current) return;
       toast({
         title: 'Error',
         description: 'Failed to load profile',
         variant: 'destructive',
       });
     } finally {
-      setLoading(false);
+      if (requestId === profileLoadRequestIdRef.current && targetUserId === latestUserIdRef.current) {
+        setLoading(false);
+      }
     }
   };
 
@@ -1125,7 +1196,7 @@ export default function MemberProfile() {
                     )}
                     {/* Message Button for Connected Users */}
                     {!isOwnProfile && connectionStatus === 'connected' && (
-                      <Button variant="default" size="sm" onClick={handleStartMessage}>
+                    <Button variant="default" size="sm" onClick={handleStartMessage} disabled={creatingChat}>
                         <MessageSquare className="w-4 h-4 mr-2" />
                         Message
                       </Button>

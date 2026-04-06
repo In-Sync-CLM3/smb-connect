@@ -32,6 +32,7 @@ export const UniversalSearch = () => {
   const [loading, setLoading] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const searchRequestIdRef = useRef(0);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -46,8 +47,12 @@ export const UniversalSearch = () => {
 
   useEffect(() => {
     const search = async () => {
-      if (!searchTerm.trim()) {
+      const trimmedTerm = searchTerm.trim();
+      const requestId = ++searchRequestIdRef.current;
+
+      if (!trimmedTerm) {
         setResults([]);
+        setLoading(false);
         return;
       }
 
@@ -55,15 +60,21 @@ export const UniversalSearch = () => {
       try {
         // Search members and associations in parallel
         const [membersResult, associationsResult] = await Promise.all([
-          searchMembers(searchTerm),
-          searchAssociations(searchTerm),
+          searchMembers(trimmedTerm),
+          searchAssociations(trimmedTerm),
         ]);
+
+        if (requestId !== searchRequestIdRef.current || trimmedTerm !== searchTerm.trim()) {
+          return;
+        }
 
         setResults([...associationsResult, ...membersResult]);
       } catch (error) {
         console.error('Search error:', error);
       } finally {
-        setLoading(false);
+        if (requestId === searchRequestIdRef.current) {
+          setLoading(false);
+        }
       }
     };
 

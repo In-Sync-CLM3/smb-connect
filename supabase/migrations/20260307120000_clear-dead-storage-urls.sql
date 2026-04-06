@@ -1,15 +1,61 @@
--- Clear all storage URLs that point to files from the deleted old project.
--- The old project (jqynxytwngtytvuzucuo) was deleted and its storage is gone.
--- The import script rewrote URLs to the new project ref, but files were never transferred.
--- This sets broken URLs to NULL so the UI shows placeholders instead of broken images.
+-- Clear only storage URLs whose backing objects do not exist.
+-- The old project (jqynxytwngtytvuzucuo) was deleted and many imported URLs were
+-- rewritten to the new project ref without transferring the files. The original
+-- version of this migration nulled every media URL, which also wiped valid uploads.
+-- Restrict cleanup to URLs that point at missing storage objects.
 
 -- Profiles: avatar and cover images
-UPDATE profiles SET avatar = NULL WHERE avatar IS NOT NULL;
-UPDATE profiles SET cover_image = NULL WHERE cover_image IS NOT NULL;
+UPDATE profiles p
+SET avatar = NULL
+WHERE p.avatar LIKE '%/storage/v1/object/public/profile-images/%'
+AND NOT EXISTS (
+  SELECT 1
+  FROM storage.objects o
+  WHERE o.bucket_id = 'profile-images'
+    AND o.name = substring(p.avatar FROM '/storage/v1/object/public/profile-images/(.*)$')
+);
+
+UPDATE profiles p
+SET cover_image = NULL
+WHERE p.cover_image LIKE '%/storage/v1/object/public/profile-images/%'
+AND NOT EXISTS (
+  SELECT 1
+  FROM storage.objects o
+  WHERE o.bucket_id = 'profile-images'
+    AND o.name = substring(p.cover_image FROM '/storage/v1/object/public/profile-images/(.*)$')
+);
 
 -- Associations: logo and cover image
-UPDATE associations SET logo = NULL WHERE logo IS NOT NULL;
-UPDATE associations SET cover_image = NULL WHERE cover_image IS NOT NULL;
+UPDATE associations a
+SET logo = NULL
+WHERE (
+  a.logo LIKE '%/storage/v1/object/public/association-logos/%'
+  AND NOT EXISTS (
+    SELECT 1
+    FROM storage.objects o
+    WHERE o.bucket_id = 'association-logos'
+      AND o.name = substring(a.logo FROM '/storage/v1/object/public/association-logos/(.*)$')
+  )
+)
+OR (
+  a.logo LIKE '%/storage/v1/object/public/profile-images/%'
+  AND NOT EXISTS (
+    SELECT 1
+    FROM storage.objects o
+    WHERE o.bucket_id = 'profile-images'
+      AND o.name = substring(a.logo FROM '/storage/v1/object/public/profile-images/(.*)$')
+  )
+);
+
+UPDATE associations a
+SET cover_image = NULL
+WHERE a.cover_image LIKE '%/storage/v1/object/public/profile-images/%'
+AND NOT EXISTS (
+  SELECT 1
+  FROM storage.objects o
+  WHERE o.bucket_id = 'profile-images'
+    AND o.name = substring(a.cover_image FROM '/storage/v1/object/public/profile-images/(.*)$')
+);
 
 -- Companies: logo
 UPDATE companies SET logo = NULL WHERE logo IS NOT NULL;
