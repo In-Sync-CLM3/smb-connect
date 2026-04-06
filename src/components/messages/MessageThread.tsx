@@ -19,6 +19,7 @@ import {
 import { MoreHorizontal, Pencil, Trash2, Reply, Smile, FileText, Download } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { toast } from '@/hooks/use-toast';
+import { getFullName, getUserInitials } from '@/lib/formatters';
 
 interface MessageThreadProps {
   chatId: string;
@@ -405,8 +406,7 @@ export function MessageThread({ chatId, currentUserId, compact = false, onMarkAs
                 <Avatar className="w-8 h-8 flex-shrink-0">
                   <AvatarImage src={message.sender.profiles.avatar} />
                   <AvatarFallback>
-                    {message.sender.profiles.first_name[0]}
-                    {message.sender.profiles.last_name[0]}
+                    {getUserInitials(message.sender.profiles.first_name, message.sender.profiles.last_name)}
                   </AvatarFallback>
                 </Avatar>
               )}
@@ -471,7 +471,7 @@ export function MessageThread({ chatId, currentUserId, compact = false, onMarkAs
               >
                 {!message.isOwn && (
                   <p className="text-xs font-semibold mb-1">
-                    {message.sender.profiles.first_name} {message.sender.profiles.last_name}
+                    {getFullName(message.sender.profiles.first_name, message.sender.profiles.last_name)}
                   </p>
                 )}
                 
@@ -560,7 +560,7 @@ export function MessageThread({ chatId, currentUserId, compact = false, onMarkAs
           <div className="flex items-center gap-2">
             <Reply className="h-4 w-4 text-muted-foreground" />
             <span className="text-sm text-muted-foreground">
-              Replying to <strong>{replyingTo.sender.profiles.first_name}</strong>: 
+              Replying to <strong>{getFullName(replyingTo.sender.profiles.first_name, replyingTo.sender.profiles.last_name)}</strong>:
               "{replyingTo.content?.substring(0, 40)}{(replyingTo.content?.length || 0) > 40 ? '...' : ''}"
             </span>
           </div>
@@ -581,7 +581,7 @@ export function MessageThread({ chatId, currentUserId, compact = false, onMarkAs
           }}
           replyingTo={replyingTo ? {
             id: replyingTo.id,
-            senderName: `${replyingTo.sender.profiles.first_name} ${replyingTo.sender.profiles.last_name}`,
+            senderName: getFullName(replyingTo.sender.profiles.first_name, replyingTo.sender.profiles.last_name),
             content: replyingTo.content || ''
           } : undefined}
         />

@@ -6,6 +6,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Search } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { getFullName, getUserInitials } from '@/lib/formatters';
 
 interface ComposeMessageDialogProps {
   open: boolean;
@@ -164,7 +165,7 @@ export function ComposeMessageDialog({
   };
 
   const filteredMembers = members.filter(member =>
-    `${member.profiles.first_name} ${member.profiles.last_name}`
+    getFullName(member.profiles.first_name, member.profiles.last_name)
       .toLowerCase()
       .includes(searchQuery.toLowerCase())
   );
@@ -205,12 +206,12 @@ export function ComposeMessageDialog({
                     <Avatar className="w-10 h-10">
                       <AvatarImage src={member.profiles.avatar || undefined} />
                       <AvatarFallback>
-                        {member.profiles.first_name[0]}{member.profiles.last_name[0]}
+                        {getUserInitials(member.profiles.first_name, member.profiles.last_name)}
                       </AvatarFallback>
                     </Avatar>
                     <div className="text-left">
                       <p className="font-medium">
-                        {member.profiles.first_name} {member.profiles.last_name}
+                        {getFullName(member.profiles.first_name, member.profiles.last_name)}
                       </p>
                     </div>
                   </button>

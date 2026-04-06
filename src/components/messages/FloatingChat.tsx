@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { toast } from 'sonner';
 import { useUnreadMessageCount } from '@/hooks/useUnreadMessageCount';
+import { getFullName, getInitialsFromName } from '@/lib/formatters';
 
 // Helper function to get last message preview with attachment indicators
 const getLastMessagePreview = (lastMsg: { content: string | null; attachments: any } | null): string => {
@@ -179,7 +180,7 @@ export function FloatingChat({ currentUserId, initialChatId, requestOpen, onOpen
           if (otherProfile) {
             return {
               id: chat.id,
-              name: `${otherProfile.first_name} ${otherProfile.last_name}`,
+              name: getFullName(otherProfile?.first_name, otherProfile?.last_name),
               lastMessage: getLastMessagePreview(lastMsg),
               lastMessageAt: lastMsg?.created_at || chat.last_message_at || new Date().toISOString(),
               avatar: otherProfile.avatar || undefined,
@@ -305,7 +306,7 @@ export function FloatingChat({ currentUserId, initialChatId, requestOpen, onOpen
               <Avatar className="h-8 w-8 flex-shrink-0">
                 <AvatarImage src={selectedConversation.avatar} />
                 <AvatarFallback className="text-xs bg-primary-foreground/20">
-                  {selectedConversation.name.split(' ').map(n => n[0]).join('')}
+                  {getInitialsFromName(selectedConversation.name)}
                 </AvatarFallback>
               </Avatar>
               <div className="min-w-0">
@@ -415,7 +416,7 @@ export function FloatingChat({ currentUserId, initialChatId, requestOpen, onOpen
                     >
                       <Avatar className="w-10 h-10">
                         <AvatarImage src={conv.avatar} />
-                        <AvatarFallback>{conv.name.split(' ').map(n => n[0]).join('')}</AvatarFallback>
+                        <AvatarFallback>{getInitialsFromName(conv.name)}</AvatarFallback>
                       </Avatar>
                       <div className="flex-1 min-w-0">
                         <h3 className="font-semibold text-sm truncate">{conv.name}</h3>

@@ -7,6 +7,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Search, PenSquare } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ComposeMessageDialog } from './ComposeMessageDialog';
+import { getFullName, getInitialsFromName } from '@/lib/formatters';
 
 interface ConversationListProps {
   selectedChatId: string | null;
@@ -201,11 +202,11 @@ export function ConversationList({ selectedChatId, onSelectChat, currentUserId }
             const otherProfile = (otherParticipant as any).members.profiles;
             return {
               id: chat.id,
-              name: `${otherProfile.first_name} ${otherProfile.last_name}`,
+              name: getFullName(otherProfile?.first_name, otherProfile?.last_name),
               lastMessage: lastMessagePreview,
               lastMessageAt: lastMsg?.created_at || chat.last_message_at || new Date().toISOString(),
               unreadCount: unreadCountByChat[chat.id] || 0,
-              avatar: otherProfile.avatar,
+              avatar: otherProfile?.avatar,
               otherMemberId: (otherParticipant as any).members.id,
             };
           }
@@ -298,7 +299,7 @@ export function ConversationList({ selectedChatId, onSelectChat, currentUserId }
               >
                 <Avatar className="w-12 h-12">
                   <AvatarImage src={conv.avatar} />
-                  <AvatarFallback>{conv.name.split(' ').map(n => n[0]).join('')}</AvatarFallback>
+                  <AvatarFallback>{getInitialsFromName(conv.name)}</AvatarFallback>
                 </Avatar>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-baseline justify-between mb-1">

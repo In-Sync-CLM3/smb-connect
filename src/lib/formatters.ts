@@ -44,15 +44,36 @@ export function formatRelativeTime(dateString: string): string {
 /**
  * Get user initials from first and last name
  */
-export function getUserInitials(firstName: string, lastName: string): string {
-  return `${firstName?.[0] || ''}${lastName?.[0] || ''}`.toUpperCase();
+export function getUserInitials(firstName?: string | null, lastName?: string | null): string {
+  const initials = `${firstName?.trim()?.[0] || ''}${lastName?.trim()?.[0] || ''}`.toUpperCase();
+  return initials || '?';
 }
 
 /**
  * Get full name from first and last name
  */
-export function getFullName(firstName: string, lastName: string): string {
-  return `${firstName} ${lastName}`.trim();
+export function getFullName(firstName?: string | null, lastName?: string | null): string {
+  const fullName = [firstName, lastName]
+    .map((part) => part?.trim())
+    .filter((part): part is string => Boolean(part))
+    .join(' ');
+
+  return fullName || 'Unknown Member';
+}
+
+/**
+ * Get initials from an already-built display name
+ */
+export function getInitialsFromName(name?: string | null): string {
+  const initials = (name || '')
+    .split(' ')
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() || '')
+    .join('');
+
+  return initials || '?';
 }
 
 /**
