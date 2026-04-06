@@ -6,6 +6,18 @@
 -- ============================================================
 -- 1. Unique partial index: prevents concurrent duplicate invitations
 -- ============================================================
+-- First, deduplicate existing pending invitations (keep the newest one)
+DELETE FROM member_invitations mi
+WHERE mi.status = 'pending'
+  AND mi.id <> (
+    SELECT id FROM member_invitations mi2
+    WHERE LOWER(mi2.email) = LOWER(mi.email)
+      AND mi2.organization_id = mi.organization_id
+      AND mi2.status = 'pending'
+    ORDER BY mi2.created_at DESC
+    LIMIT 1
+  );
+
 CREATE UNIQUE INDEX IF NOT EXISTS idx_member_invitations_pending_unique
 ON member_invitations (LOWER(email), organization_id)
 WHERE status = 'pending';
