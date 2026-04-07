@@ -214,34 +214,53 @@ export default function BrowseMembers() {
       console.log('Loading members, current member id:', currentMember?.id || 'none (non-member user)');
 
       // Load all members (exclude current user if they have a member record) with company and association details
-      let membersQuery = supabase
-        .from('members')
-        .select(`
-          id,
-          user_id,
-          company:companies!members_company_id_fkey(
-            id,
-            name,
-            association_id,
-            employee_count,
-            annual_turnover,
-            city,
-            state,
-            country,
-            association:associations(id, name)
-          )
-        `)
-        .eq('is_active', true);
+      // Fetch in pages of 1000 to bypass Supabase's default row limit
+      const PAGE_SIZE = 1000;
+      let allMembersData: any[] = [];
+      let pageOffset = 0;
+      let hasMore = true;
 
-      if (currentMember) {
-        membersQuery = membersQuery.neq('id', currentMember.id);
+      while (hasMore) {
+        let membersQuery = supabase
+          .from('members')
+          .select(`
+            id,
+            user_id,
+            company:companies!members_company_id_fkey(
+              id,
+              name,
+              association_id,
+              employee_count,
+              annual_turnover,
+              city,
+              state,
+              country,
+              association:associations(id, name)
+            )
+          `)
+          .eq('is_active', true)
+          .range(pageOffset, pageOffset + PAGE_SIZE - 1);
+
+        if (currentMember) {
+          membersQuery = membersQuery.neq('id', currentMember.id);
+        }
+
+        const { data: pageData, error: membersError } = await membersQuery;
+
+        if (membersError) throw membersError;
+
+        if (pageData && pageData.length > 0) {
+          allMembersData = allMembersData.concat(pageData);
+          pageOffset += PAGE_SIZE;
+          hasMore = pageData.length === PAGE_SIZE;
+        } else {
+          hasMore = false;
+        }
       }
 
-      const { data: membersData, error: membersError } = await membersQuery;
+      const membersData = allMembersData;
 
-      console.log('Members query result:', { membersData, membersError, count: membersData?.length });
-
-      if (membersError) throw membersError;
+      console.log('Members query result:', { count: membersData.length });
 
       // Batch fetch all profiles in chunked queries (to avoid URL length limits)
       const userIds = (membersData || []).map(m => m.user_id);
