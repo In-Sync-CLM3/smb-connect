@@ -277,6 +277,13 @@ export default function AssociationFeed() {
     }
   };
 
+  const loadAssociationInfo = async () => {
+    const uid = userIdRef.current;
+    if (!uid) return;
+    const info = await resolveAssociationInfo(uid);
+    if (info) setAssociationInfo(info);
+  };
+
   const loadPendingConnectionsCount = async (userId?: string) => {
     try {
       const uid = userId || userIdRef.current;
