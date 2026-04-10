@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft, TrendingUp, Users, Building2, Mail, MessageCircle, Activity, Settings, LogOut, GraduationCap, CheckCircle2, Clock } from "lucide-react";
+import { ArrowLeft, TrendingUp, Users, Building2, Mail, MessageCircle, Activity, Settings, LogOut, GraduationCap, CheckCircle2, Clock, UserCheck } from "lucide-react";
 import { toast } from "sonner";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -44,6 +44,15 @@ interface TopAssociation {
   companyCount: number;
 }
 
+interface ConnectRequestUser {
+  memberId: string;
+  name: string;
+  totalSent: number;
+  pending: number;
+  accepted: number;
+  rejected: number;
+}
+
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8'];
 
 const AdminAnalytics = () => {
@@ -73,6 +82,7 @@ const AdminAnalytics = () => {
   const [communicationData, setCommunicationData] = useState<CommunicationData[]>([]);
   const [topAssociations, setTopAssociations] = useState<TopAssociation[]>([]);
   const [roleDistribution, setRoleDistribution] = useState<any[]>([]);
+  const [connectRequestsReport, setConnectRequestsReport] = useState<ConnectRequestUser[]>([]);
 
   useEffect(() => {
     loadAnalytics();
@@ -191,6 +201,9 @@ const AdminAnalytics = () => {
       
       // Load role distribution
       await loadRoleDistribution();
+
+      // Load connect requests report
+      await loadConnectRequestsReport(startDate);
 
     } catch (error: any) {
       console.error('Error loading analytics:', error);
@@ -341,6 +354,70 @@ const AdminAnalytics = () => {
       ]);
     } catch (error) {
       console.error('Error loading role distribution:', error);
+    }
+  };
+
+  const loadConnectRequestsReport = async (startDate: string) => {
+    try {
+      const { data: connections } = await supabase
+        .from('connections')
+        .select('sender_id, status')
+        .gte('created_at', startDate);
+
+      if (!connections || connections.length === 0) {
+        setConnectRequestsReport([]);
+        return;
+      }
+
+      const senderMap = new Map<string, { total: number; pending: number; accepted: number; rejected: number }>();
+      connections.forEach(conn => {
+        const current = senderMap.get(conn.sender_id) || { total: 0, pending: 0, accepted: 0, rejected: 0 };
+        current.total++;
+        if (conn.status === 'pending') current.pending++;
+        else if (conn.status === 'accepted') current.accepted++;
+        else if (conn.status === 'rejected') current.rejected++;
+        senderMap.set(conn.sender_id, current);
+      });
+
+      const sortedSenders = Array.from(senderMap.entries())
+        .sort((a, b) => b[1].total - a[1].total)
+        .slice(0, 20);
+
+      const senderIds = sortedSenders.map(([id]) => id);
+
+      const { data: members } = await supabase
+        .from('members')
+        .select('id, user_id')
+        .in('id', senderIds);
+
+      const memberMap = new Map((members || []).map(m => [m.id, m.user_id]));
+      const userIds = [...new Set((members || []).map(m => m.user_id))];
+
+      const { data: profiles } = userIds.length > 0
+        ? await supabase.from('profiles').select('id, first_name, last_name').in('id', userIds)
+        : { data: [] };
+
+      const profileMap = new Map((profiles || []).map(p => [p.id, p]));
+
+      const report = sortedSenders.map(([memberId, counts]) => {
+        const userId = memberMap.get(memberId);
+        const profile = userId ? profileMap.get(userId) : null;
+        const name = profile
+          ? `${profile.first_name || ''} ${profile.last_name || ''}`.trim() || 'Unknown'
+          : 'Unknown';
+        return {
+          memberId,
+          name,
+          totalSent: counts.total,
+          pending: counts.pending,
+          accepted: counts.accepted,
+          rejected: counts.rejected,
+        };
+      });
+
+      setConnectRequestsReport(report);
+    } catch (error) {
+      console.error('Error loading connect requests report:', error);
     }
   };
 
@@ -655,6 +732,50 @@ const AdminAnalytics = () => {
               </div>
             ))}
           </div>
+        </CardContent>
+      </Card>
+      {/* Connect Requests Report */}
+      <Card className="border-none shadow-lg hover:shadow-xl transition-all">
+        <CardHeader className="bg-gradient-to-r from-primary/5 to-secondary/5">
+          <CardTitle className="flex items-center gap-2 text-primary">
+            <UserCheck className="h-5 w-5" />
+            Connect Requests Report
+          </CardTitle>
+          <CardDescription>Top 20 users by connect requests sent in the selected period</CardDescription>
+        </CardHeader>
+        <CardContent className="pt-6">
+          {connectRequestsReport.length > 0 ? (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b">
+                    <th className="text-left py-2 px-3 text-muted-foreground font-medium">#</th>
+                    <th className="text-left py-2 px-3 text-muted-foreground font-medium">Member Name</th>
+                    <th className="text-center py-2 px-3 text-muted-foreground font-medium">Total Sent</th>
+                    <th className="text-center py-2 px-3 text-muted-foreground font-medium">Accepted</th>
+                    <th className="text-center py-2 px-3 text-muted-foreground font-medium">Pending</th>
+                    <th className="text-center py-2 px-3 text-muted-foreground font-medium">Rejected</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {connectRequestsReport.map((row, index) => (
+                    <tr key={row.memberId} className="border-b hover:bg-muted/30 transition-colors">
+                      <td className="py-2 px-3 text-muted-foreground">{index + 1}</td>
+                      <td className="py-2 px-3 font-medium">{row.name}</td>
+                      <td className="py-2 px-3 text-center font-bold text-primary">{row.totalSent}</td>
+                      <td className="py-2 px-3 text-center text-green-600">{row.accepted}</td>
+                      <td className="py-2 px-3 text-center text-orange-500">{row.pending}</td>
+                      <td className="py-2 px-3 text-center text-red-500">{row.rejected}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="text-center py-8 text-muted-foreground">
+              No connect request data available for this period
+            </div>
+          )}
         </CardContent>
       </Card>
       </main>

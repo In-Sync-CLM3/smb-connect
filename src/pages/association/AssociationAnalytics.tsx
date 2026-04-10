@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { BackButton } from "@/components/BackButton";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { TrendingUp, Users, Building2, Activity, GraduationCap, CheckCircle2, Clock, BarChart3 } from "lucide-react";
+import { TrendingUp, Users, Building2, Activity, GraduationCap, CheckCircle2, Clock, BarChart3, UserCheck } from "lucide-react";
 import { toast } from "sonner";
 import {
   LineChart,
@@ -31,6 +31,15 @@ interface TimeSeriesData {
 interface TopCompany {
   name: string;
   memberCount: number;
+}
+
+interface ConnectRequestUser {
+  memberId: string;
+  name: string;
+  totalSent: number;
+  pending: number;
+  accepted: number;
+  rejected: number;
 }
 
 const COLORS = ['hsl(var(--primary))', 'hsl(var(--secondary))', 'hsl(var(--accent))', 'hsl(var(--muted))'];
@@ -60,6 +69,7 @@ const AssociationAnalytics = () => {
   
   const [growthData, setGrowthData] = useState<TimeSeriesData[]>([]);
   const [topCompanies, setTopCompanies] = useState<TopCompany[]>([]);
+  const [connectRequestsReport, setConnectRequestsReport] = useState<ConnectRequestUser[]>([]);
 
   useEffect(() => {
     const initAssociation = async () => {
@@ -169,9 +179,12 @@ const AssociationAnalytics = () => {
 
       // Load growth data
       await loadGrowthData(companyIds, startDate);
-      
+
       // Load top companies
       await loadTopCompanies(companyIds);
+
+      // Load connect requests report
+      await loadConnectRequestsReport(companyIds, startDate);
 
       setLoading(false);
     } catch (error: any) {
@@ -260,6 +273,82 @@ const AssociationAnalytics = () => {
       setTopCompanies(topCompaniesData);
     } catch (error) {
       console.error('Error loading top companies:', error);
+    }
+  };
+
+  const loadConnectRequestsReport = async (companyIds: string[], startDate: string | null) => {
+    try {
+      const { data: members } = await supabase
+        .from('members')
+        .select('id, user_id')
+        .in('company_id', companyIds)
+        .eq('is_active', true);
+
+      if (!members || members.length === 0) {
+        setConnectRequestsReport([]);
+        return;
+      }
+
+      const memberIds = members.map(m => m.id);
+
+      let query = supabase
+        .from('connections')
+        .select('sender_id, status')
+        .in('sender_id', memberIds);
+
+      if (startDate) {
+        query = query.gte('created_at', startDate);
+      }
+
+      const { data: connections } = await query;
+
+      if (!connections || connections.length === 0) {
+        setConnectRequestsReport([]);
+        return;
+      }
+
+      const senderMap = new Map<string, { total: number; pending: number; accepted: number; rejected: number }>();
+      connections.forEach(conn => {
+        const current = senderMap.get(conn.sender_id) || { total: 0, pending: 0, accepted: 0, rejected: 0 };
+        current.total++;
+        if (conn.status === 'pending') current.pending++;
+        else if (conn.status === 'accepted') current.accepted++;
+        else if (conn.status === 'rejected') current.rejected++;
+        senderMap.set(conn.sender_id, current);
+      });
+
+      const sortedSenders = Array.from(senderMap.entries())
+        .sort((a, b) => b[1].total - a[1].total)
+        .slice(0, 20);
+
+      const memberMap = new Map(members.map(m => [m.id, m.user_id]));
+      const userIds = [...new Set(members.map(m => m.user_id))];
+
+      const { data: profiles } = userIds.length > 0
+        ? await supabase.from('profiles').select('id, first_name, last_name').in('id', userIds)
+        : { data: [] };
+
+      const profileMap = new Map((profiles || []).map(p => [p.id, p]));
+
+      const report = sortedSenders.map(([memberId, counts]) => {
+        const userId = memberMap.get(memberId);
+        const profile = userId ? profileMap.get(userId) : null;
+        const name = profile
+          ? `${profile.first_name || ''} ${profile.last_name || ''}`.trim() || 'Unknown'
+          : 'Unknown';
+        return {
+          memberId,
+          name,
+          totalSent: counts.total,
+          pending: counts.pending,
+          accepted: counts.accepted,
+          rejected: counts.rejected,
+        };
+      });
+
+      setConnectRequestsReport(report);
+    } catch (error) {
+      console.error('Error loading connect requests report:', error);
     }
   };
 
@@ -542,6 +631,50 @@ const AssociationAnalytics = () => {
                 <p className="text-sm text-muted-foreground">Completion Rate</p>
               </div>
             </div>
+          </CardContent>
+        </Card>
+        {/* Connect Requests Report */}
+        <Card className="border-primary/20">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <UserCheck className="h-5 w-5 text-primary" />
+              Connect Requests Report
+            </CardTitle>
+            <CardDescription>Top 20 members by connect requests sent in the selected period</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {connectRequestsReport.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b">
+                      <th className="text-left py-2 px-3 text-muted-foreground font-medium">#</th>
+                      <th className="text-left py-2 px-3 text-muted-foreground font-medium">Member Name</th>
+                      <th className="text-center py-2 px-3 text-muted-foreground font-medium">Total Sent</th>
+                      <th className="text-center py-2 px-3 text-muted-foreground font-medium">Accepted</th>
+                      <th className="text-center py-2 px-3 text-muted-foreground font-medium">Pending</th>
+                      <th className="text-center py-2 px-3 text-muted-foreground font-medium">Rejected</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {connectRequestsReport.map((row, index) => (
+                      <tr key={row.memberId} className="border-b hover:bg-muted/30 transition-colors">
+                        <td className="py-2 px-3 text-muted-foreground">{index + 1}</td>
+                        <td className="py-2 px-3 font-medium">{row.name}</td>
+                        <td className="py-2 px-3 text-center font-bold text-primary">{row.totalSent}</td>
+                        <td className="py-2 px-3 text-center text-green-600">{row.accepted}</td>
+                        <td className="py-2 px-3 text-center text-orange-500">{row.pending}</td>
+                        <td className="py-2 px-3 text-center text-red-500">{row.rejected}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="text-center py-8 text-muted-foreground">
+                No connect request data available for this period
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
