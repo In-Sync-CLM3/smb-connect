@@ -79,6 +79,7 @@ const EventLandingPageView = lazy(() => import("./pages/public/EventLandingPageV
 const CouponManagement = lazy(() => import("./pages/admin/CouponManagement"));
 const EventRegistrations = lazy(() => import("./pages/admin/EventRegistrations"));
 const DataExport = lazy(() => import("./pages/admin/DataExport"));
+const MemberConnectionRequests = lazy(() => import("./pages/admin/MemberConnectionRequests"));
 
 const queryClient = new QueryClient();
 
@@ -357,6 +358,14 @@ const AppContent = () => {
             element={
               <ProtectedRoute>
                 <MemberInvitations />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/member-connections"
+            element={
+              <ProtectedRoute>
+                <MemberConnectionRequests />
               </ProtectedRoute>
             }
           />
