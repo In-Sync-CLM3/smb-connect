@@ -58,7 +58,7 @@ const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8'];
 const AdminAnalytics = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
-  const [timeRange, setTimeRange] = useState<'7d' | '30d' | '90d'>('30d');
+  const [timeRange, setTimeRange] = useState<'7d' | '30d' | '90d' | 'all'>('30d');
   const [profile, setProfile] = useState<any>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   
@@ -130,7 +130,7 @@ const AdminAnalytics = () => {
   const loadAnalytics = async () => {
     try {
       setLoading(true);
-      const days = timeRange === '7d' ? 7 : timeRange === '30d' ? 30 : 90;
+      const days = timeRange === '7d' ? 7 : timeRange === '30d' ? 30 : timeRange === '90d' ? 90 : 3650;
       const startDate = getDaysAgo(days);
 
       // Load overall stats
@@ -427,6 +427,7 @@ const AdminAnalytics = () => {
               <TabsTrigger value="7d">7 Days</TabsTrigger>
               <TabsTrigger value="30d">30 Days</TabsTrigger>
               <TabsTrigger value="90d">90 Days</TabsTrigger>
+              <TabsTrigger value="all">All Time</TabsTrigger>
             </TabsList>
           </Tabs>
         </div>
