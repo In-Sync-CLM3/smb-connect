@@ -359,61 +359,19 @@ const AdminAnalytics = () => {
 
   const loadConnectRequestsReport = async (startDate: string) => {
     try {
-      const { data: connections } = await supabase
-        .from('connections')
-        .select('sender_id, status')
-        .gte('created_at', startDate);
+      const { data, error } = await supabase
+        .rpc('get_connect_requests_report', { p_start_date: startDate });
 
-      if (!connections || connections.length === 0) {
-        setConnectRequestsReport([]);
-        return;
-      }
+      if (error) throw error;
 
-      const senderMap = new Map<string, { total: number; pending: number; accepted: number; rejected: number }>();
-      connections.forEach(conn => {
-        const current = senderMap.get(conn.sender_id) || { total: 0, pending: 0, accepted: 0, rejected: 0 };
-        current.total++;
-        if (conn.status === 'pending') current.pending++;
-        else if (conn.status === 'accepted') current.accepted++;
-        else if (conn.status === 'rejected') current.rejected++;
-        senderMap.set(conn.sender_id, current);
-      });
-
-      const sortedSenders = Array.from(senderMap.entries())
-        .sort((a, b) => b[1].total - a[1].total)
-        .slice(0, 20);
-
-      const senderIds = sortedSenders.map(([id]) => id);
-
-      const { data: members } = await supabase
-        .from('members')
-        .select('id, user_id')
-        .in('id', senderIds);
-
-      const memberMap = new Map((members || []).map(m => [m.id, m.user_id]));
-      const userIds = [...new Set((members || []).map(m => m.user_id))];
-
-      const { data: profiles } = userIds.length > 0
-        ? await supabase.from('profiles').select('id, first_name, last_name').in('id', userIds)
-        : { data: [] };
-
-      const profileMap = new Map((profiles || []).map(p => [p.id, p]));
-
-      const report = sortedSenders.map(([memberId, counts]) => {
-        const userId = memberMap.get(memberId);
-        const profile = userId ? profileMap.get(userId) : null;
-        const name = profile
-          ? `${profile.first_name || ''} ${profile.last_name || ''}`.trim() || 'Unknown'
-          : 'Unknown';
-        return {
-          memberId,
-          name,
-          totalSent: counts.total,
-          pending: counts.pending,
-          accepted: counts.accepted,
-          rejected: counts.rejected,
-        };
-      });
+      const report = (data || []).map((row: any) => ({
+        memberId: row.member_id,
+        name: row.full_name || 'Unknown',
+        totalSent: Number(row.total_sent),
+        accepted: Number(row.accepted),
+        pending: Number(row.pending),
+        rejected: Number(row.rejected),
+      }));
 
       setConnectRequestsReport(report);
     } catch (error) {
