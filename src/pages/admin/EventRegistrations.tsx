@@ -31,7 +31,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { ArrowLeft, Download, Search, Eye, Loader2, BarChart3, Users, TrendingUp } from 'lucide-react';
+import { ArrowLeft, Download, Search, Eye, Loader2, BarChart3, Users, TrendingUp, GraduationCap, CheckCircle2, Clock } from 'lucide-react';
 import { format } from 'date-fns';
 import { Json } from '@/integrations/supabase/types';
 
@@ -71,6 +71,8 @@ const EventRegistrations = () => {
   const [utmMediumFilter, setUtmMediumFilter] = useState<string>('all');
   const [utmCampaignFilter, setUtmCampaignFilter] = useState<string>('all');
   const [activeTab, setActiveTab] = useState('registrations');
+  const [onboardingSearch, setOnboardingSearch] = useState('');
+  const [onboardingFilter, setOnboardingFilter] = useState<'all' | 'completed' | 'pending'>('all');
 
   const { data: landingPage, isLoading: isLoadingPage } = useQuery({
     queryKey: ['landing-page', id],
@@ -119,6 +121,67 @@ const EventRegistrations = () => {
     },
     enabled: !!id && !!userId,
   });
+
+  interface OnboardingRow {
+    registration_id: string;
+    first_name: string;
+    last_name: string;
+    email: string;
+    phone: string | null;
+    registered_at: string;
+    onboarding_completed: boolean;
+    onboarding_completed_at: string | null;
+  }
+
+  const { data: onboardingData, isLoading: isLoadingOnboarding } = useQuery({
+    queryKey: ['event-onboarding', id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .rpc('get_event_onboarding_report', { p_landing_page_id: id });
+      if (error) throw error;
+      return (data || []) as OnboardingRow[];
+    },
+    enabled: !!id && !!userId,
+  });
+
+  const onboardingStats = useMemo(() => {
+    const total = onboardingData?.length ?? 0;
+    const completed = onboardingData?.filter(r => r.onboarding_completed).length ?? 0;
+    return { total, completed, pending: total - completed };
+  }, [onboardingData]);
+
+  const filteredOnboarding = useMemo(() => {
+    return (onboardingData ?? []).filter(row => {
+      if (onboardingFilter === 'completed' && !row.onboarding_completed) return false;
+      if (onboardingFilter === 'pending' && row.onboarding_completed) return false;
+      if (onboardingSearch) {
+        const q = onboardingSearch.toLowerCase();
+        if (
+          !`${row.first_name} ${row.last_name}`.toLowerCase().includes(q) &&
+          !row.email.toLowerCase().includes(q)
+        ) return false;
+      }
+      return true;
+    });
+  }, [onboardingData, onboardingFilter, onboardingSearch]);
+
+  const exportOnboardingCSV = () => {
+    const headers = ['First Name', 'Last Name', 'Email', 'Phone', 'Registered At', 'Onboarding Completed', 'Completed At'];
+    const rows = filteredOnboarding.map(r => [
+      r.first_name, r.last_name, r.email, r.phone ?? '',
+      format(new Date(r.registered_at), 'yyyy-MM-dd HH:mm:ss'),
+      r.onboarding_completed ? 'Yes' : 'No',
+      r.onboarding_completed_at ? format(new Date(r.onboarding_completed_at), 'yyyy-MM-dd HH:mm:ss') : '',
+    ]);
+    const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `onboarding-${landingPage?.slug ?? id}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   // Get unique UTM values for filters
   const utmOptions = useMemo(() => {
@@ -336,6 +399,7 @@ const EventRegistrations = () => {
         <TabsList>
           <TabsTrigger value="registrations">Registrations</TabsTrigger>
           <TabsTrigger value="analytics">📊 UTM Analytics</TabsTrigger>
+          <TabsTrigger value="onboarding">🎓 Onboarding Funnel</TabsTrigger>
         </TabsList>
 
         <TabsContent value="registrations" className="space-y-4">
@@ -590,6 +654,130 @@ const EventRegistrations = () => {
               </Card>
             </>
           )}
+        </TabsContent>
+
+        {/* ── ONBOARDING FUNNEL TAB ── */}
+        <TabsContent value="onboarding" className="space-y-4">
+          {/* Summary cards */}
+          <div className="grid gap-4 md:grid-cols-3">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Total Registrants</CardTitle>
+                <Users className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{onboardingStats.total}</div>
+                <p className="text-xs text-muted-foreground">Completed registration</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Completed Onboarding</CardTitle>
+                <CheckCircle2 className="h-4 w-4 text-green-600" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-green-600">{onboardingStats.completed}</div>
+                <p className="text-xs text-muted-foreground">
+                  {onboardingStats.total > 0
+                    ? `${Math.round((onboardingStats.completed / onboardingStats.total) * 100)}% conversion`
+                    : '—'}
+                </p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Pending Onboarding</CardTitle>
+                <Clock className="h-4 w-4 text-orange-500" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-orange-500">{onboardingStats.pending}</div>
+                <p className="text-xs text-muted-foreground">Yet to complete</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Filters + export */}
+          <div className="flex flex-col sm:flex-row gap-3">
+            <div className="relative flex-1 max-w-md">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search by name or email..."
+                value={onboardingSearch}
+                onChange={e => setOnboardingSearch(e.target.value)}
+                className="pl-10"
+              />
+            </div>
+            <Select value={onboardingFilter} onValueChange={v => setOnboardingFilter(v as any)}>
+              <SelectTrigger className="w-[180px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Registrants</SelectItem>
+                <SelectItem value="completed">Completed Onboarding</SelectItem>
+                <SelectItem value="pending">Pending Onboarding</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button variant="outline" onClick={exportOnboardingCSV} disabled={filteredOnboarding.length === 0}>
+              <Download className="h-4 w-4 mr-2" />
+              Export CSV
+            </Button>
+          </div>
+
+          {isLoadingOnboarding ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            </div>
+          ) : filteredOnboarding.length === 0 ? (
+            <Card>
+              <CardContent className="py-12 text-center text-muted-foreground">
+                {onboardingSearch || onboardingFilter !== 'all'
+                  ? 'No registrants match your filters.'
+                  : 'No completed registrants found.'}
+              </CardContent>
+            </Card>
+          ) : (
+            <Card>
+              <CardContent className="p-0">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Name</TableHead>
+                      <TableHead>Email</TableHead>
+                      <TableHead>Phone</TableHead>
+                      <TableHead>Registered</TableHead>
+                      <TableHead>Onboarding</TableHead>
+                      <TableHead>Completed At</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredOnboarding.map(row => (
+                      <TableRow key={row.registration_id}>
+                        <TableCell className="font-medium">{row.first_name} {row.last_name}</TableCell>
+                        <TableCell>{row.email}</TableCell>
+                        <TableCell>{row.phone ?? '—'}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground">
+                          {format(new Date(row.registered_at), 'MMM d, yyyy')}
+                        </TableCell>
+                        <TableCell>
+                          {row.onboarding_completed
+                            ? <Badge className="bg-green-600 text-white">Completed</Badge>
+                            : <Badge variant="secondary">Pending</Badge>}
+                        </TableCell>
+                        <TableCell className="text-sm text-muted-foreground">
+                          {row.onboarding_completed_at
+                            ? format(new Date(row.onboarding_completed_at), 'MMM d, yyyy')
+                            : '—'}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          )}
+          <p className="text-xs text-muted-foreground">
+            Showing {filteredOnboarding.length} of {onboardingStats.total} registrants
+          </p>
         </TabsContent>
       </Tabs>
 
