@@ -9,6 +9,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useUserRole } from '@/hooks/useUserRole';
 import { ArrowLeft, Send, Mail, Trash2 } from 'lucide-react';
 import { BulkInviteCompaniesDialog } from '@/components/admin/BulkInviteCompaniesDialog';
+import { InviteLinkSection } from '@/components/InviteLinkSection';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -278,6 +279,14 @@ export default function AssociationInvitations() {
 
       <main className="container mx-auto py-4 md:py-8 md:pl-20">
         <div className="max-w-4xl mx-auto space-y-8">
+          {/* Invite Link */}
+          {associationId && (
+            <InviteLinkSection
+              organizationId={associationId}
+              organizationType="association"
+            />
+          )}
+
           {/* Send Invitation Form */}
           <Card>
             <CardHeader>

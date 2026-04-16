@@ -80,6 +80,7 @@ const CouponManagement = lazy(() => import("./pages/admin/CouponManagement"));
 const EventRegistrations = lazy(() => import("./pages/admin/EventRegistrations"));
 const DataExport = lazy(() => import("./pages/admin/DataExport"));
 const MemberConnectionRequests = lazy(() => import("./pages/admin/MemberConnectionRequests"));
+const JoinViaLink = lazy(() => import("./pages/join/JoinViaLink"));
 
 const queryClient = new QueryClient();
 
@@ -128,7 +129,7 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boole
 
 const AppContent = () => {
   const location = useLocation();
-  const hideHomeButton = ['/', '/auth/login', '/auth/register'].includes(location.pathname) || location.pathname.startsWith('/event/');
+  const hideHomeButton = ['/', '/auth/login', '/auth/register'].includes(location.pathname) || location.pathname.startsWith('/event/') || location.pathname.startsWith('/join/');
 
   return (
     <>
@@ -705,6 +706,9 @@ const AppContent = () => {
               </ProtectedRoute>
             }
           />
+          {/* Public invite links - NO AUTH REQUIRED */}
+          <Route path="/join/:token" element={<JoinViaLink />} />
+
           {/* Public event landing pages - NO AUTH REQUIRED */}
           <Route path="/event/:slug" element={<EventLandingPageView />} />
           <Route path="/event/:slug/:subPage" element={<EventLandingPageView />} />

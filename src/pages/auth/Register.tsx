@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -30,7 +30,9 @@ type RegisterFormData = z.infer<typeof registerSchema>;
 export default function Register() {
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { toast } = useToast();
+  const redirectTo = searchParams.get('redirect');
   
   const {
     register,
@@ -62,8 +64,8 @@ export default function Register() {
         title: 'Success',
         description: 'Your account has been created successfully',
       });
-      
-      navigate('/dashboard');
+
+      navigate(redirectTo || '/dashboard');
     } catch (error: any) {
       toast({
         title: 'Error',

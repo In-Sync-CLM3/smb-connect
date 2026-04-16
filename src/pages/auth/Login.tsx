@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -34,8 +34,10 @@ export default function Login() {
   const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [resetEmailSent, setResetEmailSent] = useState(false);
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { toast } = useToast();
   const { user } = useAuth();
+  const redirectTo = searchParams.get('redirect');
   
   const {
     register,
@@ -81,9 +83,8 @@ export default function Login() {
         title: 'Success',
         description: 'You have been logged in successfully',
       });
-      
-      // Navigate to role selection page
-      navigate('/select-role');
+
+      navigate(redirectTo || '/select-role');
     } catch (error: any) {
       toast({
         title: 'Error',

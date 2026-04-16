@@ -21,6 +21,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { CreateMemberInvitationDialog } from '@/components/admin/CreateMemberInvitationDialog';
 import { BulkInviteMembersDialog } from '@/components/admin/BulkInviteMembersDialog';
+import { InviteLinkSection } from '@/components/InviteLinkSection';
 import { BackButton } from '@/components/BackButton';
 import { Loader2, MoreVertical, RefreshCw, Ban, Mail, Calendar, User } from 'lucide-react';
 import { toast } from 'sonner';
@@ -201,6 +202,12 @@ export default function MemberInvitations() {
       <div className="mb-6 relative z-[60]">
         <BackButton fallbackPath={fallbackPath} />
       </div>
+      {organizationId && (
+        <InviteLinkSection
+          organizationId={organizationId}
+          organizationType={organizationType as 'association' | 'company'}
+        />
+      )}
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
