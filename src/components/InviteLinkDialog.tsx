@@ -3,7 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import { Copy, CheckCircle2, RefreshCw, Link2, Loader2 } from 'lucide-react';
+import { Copy, CheckCircle2, Link2, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface InviteLinkDialogProps {
@@ -22,54 +22,46 @@ export function InviteLinkDialog({
   organizationName,
 }: InviteLinkDialogProps) {
   const [token, setToken] = useState<string | null>(null);
-  const [linkId, setLinkId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [generating, setGenerating] = useState(false);
   const [copied, setCopied] = useState(false);
 
   const linkUrl = token ? `${window.location.origin}/join/${token}` : '';
 
   useEffect(() => {
-    if (open) loadLink();
+    if (open) loadOrCreateLink();
   }, [open, organizationId]);
 
-  const loadLink = async () => {
+  const loadOrCreateLink = async () => {
     try {
       setLoading(true);
+      // Check for existing active link
       const { data, error } = await supabase
         .from('invite_links' as any)
-        .select('id, token')
+        .select('token')
         .eq('organization_id', organizationId)
         .eq('organization_type', organizationType)
         .eq('is_active', true)
         .maybeSingle();
       if (error) throw error;
-      setToken((data as any)?.token ?? null);
-      setLinkId((data as any)?.id ?? null);
+
+      if (data) {
+        setToken((data as any).token);
+      } else {
+        // Auto-generate if none exists
+        const { data: rpcData, error: rpcError } = await supabase.rpc('create_invite_link' as any, {
+          p_organization_id: organizationId,
+          p_organization_type: organizationType,
+          p_role: organizationType === 'company' ? 'member' : 'manager',
+        });
+        if (rpcError) throw rpcError;
+        if (!rpcData.success) throw new Error(rpcData.error);
+        setToken(rpcData.token);
+      }
     } catch (err: any) {
       console.error('Error loading invite link:', err);
+      toast.error('Failed to load invite link');
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleGenerate = async () => {
-    try {
-      setGenerating(true);
-      const { data, error } = await supabase.rpc('create_invite_link' as any, {
-        p_organization_id: organizationId,
-        p_organization_type: organizationType,
-        p_role: organizationType === 'company' ? 'member' : 'manager',
-      });
-      if (error) throw error;
-      if (!data.success) throw new Error(data.error);
-      setToken(data.token);
-      setLinkId(data.id);
-      toast.success('Invite link generated');
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to generate invite link');
-    } finally {
-      setGenerating(false);
     }
   };
 
@@ -81,23 +73,6 @@ export function InviteLinkDialog({
       setTimeout(() => setCopied(false), 2000);
     } catch {
       toast.error('Failed to copy');
-    }
-  };
-
-  const handleRevoke = async () => {
-    if (!linkId) return;
-    try {
-      setGenerating(true);
-      const { data, error } = await supabase.rpc('revoke_invite_link' as any, { p_link_id: linkId });
-      if (error) throw error;
-      if (!data.success) throw new Error(data.error);
-      setToken(null);
-      setLinkId(null);
-      toast.success('Invite link disabled');
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to disable invite link');
-    } finally {
-      setGenerating(false);
     }
   };
 
@@ -115,14 +90,14 @@ export function InviteLinkDialog({
           <div className="flex items-center justify-center py-6">
             <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
           </div>
-        ) : token ? (
+        ) : (
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground">
               Share this link to let anyone join directly.
             </p>
             <div className="flex gap-2">
               <Input value={linkUrl} readOnly className="font-mono text-xs" />
-              <Button variant="outline" size="icon" onClick={handleCopy} disabled={generating}>
+              <Button variant="outline" size="icon" onClick={handleCopy}>
                 {copied ? (
                   <CheckCircle2 className="h-4 w-4 text-green-500" />
                 ) : (
@@ -130,29 +105,6 @@ export function InviteLinkDialog({
                 )}
               </Button>
             </div>
-            <div className="flex gap-2 justify-end">
-              <Button variant="outline" size="sm" onClick={handleGenerate} disabled={generating}>
-                {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                <span className="ml-1">Regenerate</span>
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleRevoke}
-                disabled={generating}
-                className="text-destructive hover:text-destructive"
-              >
-                Disable
-              </Button>
-            </div>
-          </div>
-        ) : (
-          <div className="space-y-3 py-2">
-            <p className="text-sm text-muted-foreground">No active invite link. Generate one to share.</p>
-            <Button onClick={handleGenerate} disabled={generating} className="w-full">
-              {generating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Link2 className="mr-2 h-4 w-4" />}
-              Generate Invite Link
-            </Button>
           </div>
         )}
       </DialogContent>
