@@ -514,7 +514,7 @@ export default function AssociationDashboard() {
                 <Settings className="w-4 h-4 mr-2" />
                 Association Profile
               </Button>
-              <Button variant="outline" className="w-full" onClick={() => setInviteLinkDialogOpen(true)} disabled={!association}>
+              <Button className="w-full" onClick={() => setInviteLinkDialogOpen(true)} disabled={!association}>
                 <Link2 className="w-4 h-4 mr-2" />
                 Invite
               </Button>
