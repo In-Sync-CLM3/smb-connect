@@ -3,13 +3,14 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Building2, Users, LogOut, Settings, Radio, Calendar, GraduationCap, CheckCircle2, Clock, TrendingUp, Upload, UserPlus, Mail, BarChart3 } from 'lucide-react';
+import { Building2, Users, LogOut, Settings, Radio, Calendar, GraduationCap, CheckCircle2, Clock, TrendingUp, Upload, UserPlus, Mail, BarChart3, Link2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useUserRole } from '@/hooks/useUserRole';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { RoleNavigation } from '@/components/RoleNavigation';
 import { useRoleContext } from '@/contexts/RoleContext';
 import { PageHeader } from '@/components/layout/PageHeader';
+import { InviteLinkDialog } from '@/components/InviteLinkDialog';
 
 export default function AssociationDashboard() {
   const navigate = useNavigate();
@@ -32,6 +33,7 @@ export default function AssociationDashboard() {
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<any>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [inviteLinkDialogOpen, setInviteLinkDialogOpen] = useState(false);
 
   useEffect(() => {
     const initialize = async () => {
@@ -512,9 +514,23 @@ export default function AssociationDashboard() {
                 <Settings className="w-4 h-4 mr-2" />
                 Association Profile
               </Button>
+              <Button variant="outline" className="w-full" onClick={() => setInviteLinkDialogOpen(true)} disabled={!association}>
+                <Link2 className="w-4 h-4 mr-2" />
+                Invite
+              </Button>
             </div>
           </CardContent>
         </Card>
+
+        {association && (
+          <InviteLinkDialog
+            open={inviteLinkDialogOpen}
+            onOpenChange={setInviteLinkDialogOpen}
+            organizationId={association.id}
+            organizationType="association"
+            organizationName={association.name}
+          />
+        )}
 
         {/* Bulk Upload Section */}
         <Card>
