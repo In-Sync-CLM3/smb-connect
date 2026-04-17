@@ -63,7 +63,20 @@ export default function ResetPassword() {
 
       if (error) {
         console.error('Password reset failed:', error);
-        throw new Error(error.message || 'Invalid or expired verification code');
+        let serverMessage: string | null = null;
+        try {
+          const body = await (error as any).context?.json?.();
+          serverMessage = body?.error || null;
+        } catch {
+          try {
+            const text = await (error as any).context?.text?.();
+            if (text) {
+              const parsed = JSON.parse(text);
+              serverMessage = parsed?.error || null;
+            }
+          } catch {}
+        }
+        throw new Error(serverMessage || 'Invalid or expired verification code');
       }
 
       console.log('Password reset successful');
