@@ -32,9 +32,28 @@ serve(async (req) => {
       }
     )
 
-    // Note: We don't check if user exists here to avoid pagination issues with auth.admin.listUsers()
-    // and to maintain security by not revealing whether an email is registered.
-    // The verify-password-otp function will validate the user exists when they submit the OTP.
+    // Check if the user has a registered account (profile exists)
+    const { data: profile } = await supabaseAdmin
+      .from('profiles')
+      .select('id')
+      .ilike('email', email)
+      .maybeSingle()
+
+    if (!profile) {
+      // Check if they have a pending invitation
+      const { data: invitation } = await supabaseAdmin
+        .from('member_invitations')
+        .select('id')
+        .ilike('email', email)
+        .eq('status', 'pending')
+        .maybeSingle()
+
+      if (invitation) {
+        throw new Error('Your account registration is not yet complete. Please check your invitation email and click the "Complete Registration" link to set up your account.')
+      }
+
+      throw new Error('No account found with this email address.')
+    }
 
     // Generate 6-digit OTP
     const otp = Math.floor(100000 + Math.random() * 900000).toString()

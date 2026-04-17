@@ -242,17 +242,19 @@ export default function JoinViaLink() {
             <div className="space-y-3">
               <Button
                 className="w-full"
-                onClick={() => navigate(`/auth/login?redirect=/join/${token}`)}
-              >
-                Sign In to Join
-              </Button>
-              <Button
-                variant="outline"
-                className="w-full"
                 onClick={() => navigate(`/auth/register?redirect=/join/${token}`)}
               >
                 Create Account & Join
               </Button>
+              <p className="text-center text-sm text-muted-foreground">
+                Already have an account?{' '}
+                <button
+                  className="text-primary hover:underline font-medium"
+                  onClick={() => navigate(`/auth/login?redirect=/join/${token}`)}
+                >
+                  Sign in
+                </button>
+              </p>
             </div>
           )}
         </CardContent>
