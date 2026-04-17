@@ -32,7 +32,10 @@ export default function Register() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { toast } = useToast();
-  const redirectTo = searchParams.get('redirect');
+  const rawRedirect = searchParams.get('redirect');
+  const redirectTo = rawRedirect && rawRedirect.startsWith('/') && !rawRedirect.startsWith('//')
+    ? rawRedirect
+    : null;
   
   const {
     register,
@@ -45,8 +48,9 @@ export default function Register() {
   const onSubmit = async (data: RegisterFormData) => {
     try {
       setLoading(true);
-      const { error } = await supabase.auth.signUp({
-        email: data.email,
+      const normalizedEmail = data.email.trim().toLowerCase();
+      const { data: signUpData, error } = await supabase.auth.signUp({
+        email: normalizedEmail,
         password: data.password,
         options: {
           emailRedirectTo: window.location.origin,
@@ -59,6 +63,15 @@ export default function Register() {
       });
 
       if (error) throw error;
+
+      if (!signUpData.session) {
+        toast({
+          title: 'Check your email',
+          description: `We sent a confirmation link to ${normalizedEmail}. Click it to activate your account, then sign in.`,
+        });
+        navigate(redirectTo ? `/auth/login?redirect=${encodeURIComponent(redirectTo)}` : '/auth/login');
+        return;
+      }
 
       toast({
         title: 'Success',
