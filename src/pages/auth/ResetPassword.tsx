@@ -64,19 +64,24 @@ export default function ResetPassword() {
       if (error) {
         console.error('Password reset failed:', error);
         let serverMessage: string | null = null;
-        try {
-          const body = await (error as any).context?.json?.();
-          serverMessage = body?.error || null;
-        } catch {
+        const ctx = (error as any).context;
+        if (ctx && typeof ctx.clone === 'function') {
           try {
-            const text = await (error as any).context?.text?.();
-            if (text) {
-              const parsed = JSON.parse(text);
-              serverMessage = parsed?.error || null;
+            const raw = await ctx.clone().text();
+            console.error('[ResetPassword] server body:', raw);
+            if (raw) {
+              try {
+                const parsed = JSON.parse(raw);
+                serverMessage = parsed?.error || parsed?.message || raw;
+              } catch {
+                serverMessage = raw;
+              }
             }
-          } catch {}
+          } catch (readErr) {
+            console.error('[ResetPassword] failed to read error body', readErr);
+          }
         }
-        throw new Error(serverMessage || 'Invalid or expired verification code');
+        throw new Error(serverMessage || (error as any).message || 'Could not verify code — please request a new one.');
       }
 
       console.log('Password reset successful');

@@ -18,7 +18,14 @@ serve(async (req) => {
       throw new Error('Email, OTP code, and new password are required')
     }
 
-    const normalizedEmail = email.trim().toLowerCase()
+    const normalizedEmail = String(email).trim().toLowerCase()
+    const normalizedOtp = String(otp).trim()
+
+    console.log('[verify-password-otp] attempt', {
+      email: normalizedEmail,
+      otp_len: normalizedOtp.length,
+      otp_last2: normalizedOtp.slice(-2),
+    })
 
     const supabaseAdmin = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
@@ -35,13 +42,15 @@ serve(async (req) => {
     // Eliminates race condition: two concurrent requests cannot use the same OTP
     const { data: otpResult, error: rpcError } = await supabaseAdmin.rpc('verify_and_consume_otp', {
       p_email: normalizedEmail,
-      p_otp: otp,
+      p_otp: normalizedOtp,
     })
 
     if (rpcError) {
-      console.error('RPC error:', rpcError)
+      console.error('[verify-password-otp] RPC error:', rpcError)
       throw new Error('Failed to verify code')
     }
+
+    console.log('[verify-password-otp] rpc result', otpResult)
 
     if (!otpResult.valid) {
       throw new Error(otpResult.error || 'Invalid or expired verification code')
