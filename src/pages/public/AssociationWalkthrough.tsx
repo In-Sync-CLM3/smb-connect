@@ -272,60 +272,92 @@ function PostCard({ author, role, content, likes, comments, delay }: {
 
 function SceneIntro() {
   return (
-    <motion.div {...fade} className="flex h-full flex-col items-center justify-center bg-background relative overflow-hidden">
+    <motion.div {...fade} className="flex h-full flex-col items-center justify-center bg-background relative overflow-hidden px-8">
+      {/* Background glows */}
       <div className="pointer-events-none absolute inset-0">
-        <div className="absolute top-1/3 left-1/4 h-96 w-96 rounded-full bg-primary/10 blur-[120px]" />
-        <div className="absolute bottom-1/3 right-1/4 h-72 w-72 rounded-full bg-emerald-500/8 blur-[100px]" />
+        <div className="absolute top-1/4 left-1/3 h-[500px] w-[500px] rounded-full bg-primary/15 blur-[140px]" />
+        <div className="absolute bottom-1/4 right-1/3 h-80 w-80 rounded-full bg-emerald-400/10 blur-[100px]" />
       </div>
 
+      {/* Logo + brand */}
       <motion.div
         initial={{ scale: 0.5, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
-        transition={{ duration: 0.6, type: "spring" }}
-        className="relative mb-8 flex h-24 w-24 items-center justify-center rounded-3xl bg-primary shadow-2xl shadow-primary/30"
+        transition={{ duration: 0.5, type: "spring" }}
+        className="relative mb-6 flex items-center gap-3"
       >
-        <Network className="h-12 w-12 text-primary-foreground" />
+        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary shadow-xl shadow-primary/30">
+          <Network className="h-6 w-6 text-primary-foreground" />
+        </div>
+        <span className="text-xl font-bold tracking-tight text-foreground">SMBConnect</span>
       </motion.div>
 
+      {/* CORE HEADLINE — the big message */}
       <motion.h1
-        initial={{ opacity: 0, y: 20 }}
+        initial={{ opacity: 0, y: 30 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.3, duration: 0.5 }}
-        className="relative text-5xl font-extrabold tracking-tight text-foreground"
+        transition={{ delay: 0.25, duration: 0.6 }}
+        className="relative text-center text-4xl font-extrabold leading-tight tracking-tight text-foreground sm:text-5xl"
       >
-        SMBConnect
+        Your Members Are{" "}
+        <span className="relative inline-block">
+          <span className="relative z-10 text-primary">Looking for Each Other.</span>
+          <motion.span
+            className="absolute -bottom-1 left-0 h-1.5 w-full rounded-full bg-primary/30"
+            initial={{ scaleX: 0 }}
+            animate={{ scaleX: 1 }}
+            transition={{ delay: 0.9, duration: 0.6, ease: "easeOut" }}
+            style={{ transformOrigin: "left" }}
+          />
+        </span>
+        <br />
+        <span className="text-foreground">Help Them Connect.</span>
       </motion.h1>
 
+      {/* Supporting line */}
       <motion.p
-        initial={{ opacity: 0, y: 15 }}
+        initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.6, duration: 0.5 }}
-        className="relative mt-3 text-lg text-muted-foreground text-center max-w-sm"
+        transition={{ delay: 0.7, duration: 0.5 }}
+        className="relative mt-5 text-center text-base text-muted-foreground max-w-md leading-relaxed"
       >
-        India's Association Growth Platform
+        Give your association a digital home — where companies discover each other,
+        members collaborate, and your community grows on its own.
       </motion.p>
 
+      {/* Stats row */}
       <motion.div
-        initial={{ opacity: 0, y: 20 }}
+        initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 1.0, duration: 0.5 }}
-        className="relative mt-8 flex flex-wrap items-center justify-center gap-3"
+        transition={{ delay: 1.1, duration: 0.5 }}
+        className="relative mt-8 flex items-center gap-8"
       >
-        {["50+ Associations", "10,000+ Members", "2,000+ Companies"].map((tag, i) => (
-          <span key={i} className="rounded-full border border-border/60 bg-muted/50 px-4 py-1.5 text-sm text-muted-foreground">
-            {tag}
-          </span>
+        {[
+          { value: "50+",    label: "Associations" },
+          { value: "10K+",   label: "Members" },
+          { value: "2,000+", label: "Companies" },
+        ].map((s, i) => (
+          <div key={i} className="text-center">
+            <p className="text-2xl font-extrabold text-primary">{s.value}</p>
+            <p className="text-[11px] text-muted-foreground mt-0.5">{s.label}</p>
+          </div>
         ))}
       </motion.div>
 
-      <motion.p
+      {/* Scroll cue */}
+      <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ delay: 1.8, duration: 0.5 }}
-        className="relative mt-8 text-sm font-medium text-primary"
+        className="relative mt-10 flex items-center gap-2 rounded-full border border-primary/30 bg-primary/8 px-5 py-2"
       >
-        Your members are looking for each other — help them connect ↓
-      </motion.p>
+        <span className="text-xs font-semibold text-primary">See how it works</span>
+        <motion.span
+          animate={{ x: [0, 4, 0] }}
+          transition={{ duration: 1.2, repeat: Infinity }}
+          className="text-primary text-xs"
+        >→</motion.span>
+      </motion.div>
     </motion.div>
   );
 }
@@ -791,81 +823,92 @@ function SceneAnalytics() {
 
 function SceneOutro() {
   return (
-    <motion.div {...fade} className="flex h-full flex-col items-center justify-center bg-background relative overflow-hidden">
+    <motion.div {...fade} className="flex h-full flex-col items-center justify-center bg-background relative overflow-hidden px-8">
+      {/* Background */}
       <div className="pointer-events-none absolute inset-0">
-        <div className="absolute top-1/4 left-1/3 h-96 w-96 rounded-full bg-primary/10 blur-[120px]" />
-        <div className="absolute bottom-1/4 right-1/3 h-72 w-72 rounded-full bg-emerald-400/8 blur-[100px]" />
+        <div className="absolute top-1/4 left-1/3 h-[500px] w-[500px] rounded-full bg-primary/15 blur-[140px]" />
+        <div className="absolute bottom-1/4 right-1/3 h-80 w-80 rounded-full bg-emerald-400/10 blur-[100px]" />
       </div>
 
+      {/* Urgency badge */}
       <motion.div
-        initial={{ scale: 0.5, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
-        transition={{ duration: 0.5, type: "spring" }}
-        className="relative mb-6 flex h-20 w-20 items-center justify-center rounded-3xl bg-primary shadow-2xl shadow-primary/30"
+        initial={{ opacity: 0, scale: 0.85 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{ duration: 0.4 }}
+        className="relative mb-6 flex items-center gap-2 rounded-full bg-primary px-4 py-1.5"
       >
-        <Handshake className="h-10 w-10 text-primary-foreground" />
+        <motion.span
+          animate={{ scale: [1, 1.3, 1] }}
+          transition={{ duration: 1, repeat: Infinity }}
+          className="h-2 w-2 rounded-full bg-primary-foreground"
+        />
+        <span className="text-xs font-bold text-primary-foreground uppercase tracking-wider">
+          Your community is waiting
+        </span>
       </motion.div>
 
+      {/* Big CTA headline */}
       <motion.h2
-        initial={{ opacity: 0, y: 20 }}
+        initial={{ opacity: 0, y: 24 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.3, duration: 0.5 }}
-        className="relative text-3xl font-extrabold tracking-tight text-foreground text-center max-w-md"
+        transition={{ delay: 0.2, duration: 0.6 }}
+        className="relative text-center text-4xl font-extrabold leading-tight tracking-tight text-foreground sm:text-5xl"
       >
-        Your Association Deserves a Digital Home
+        Don't Let Your Members{" "}
+        <span className="text-primary">Network Elsewhere.</span>
       </motion.h2>
 
       <motion.p
-        initial={{ opacity: 0, y: 15 }}
+        initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.6, duration: 0.5 }}
-        className="relative mt-4 text-sm text-muted-foreground text-center max-w-sm leading-relaxed"
+        transition={{ delay: 0.5, duration: 0.5 }}
+        className="relative mt-4 text-center text-base text-muted-foreground max-w-sm leading-relaxed"
       >
-        Help your members find each other, grow their businesses, and stay engaged — all in one platform built for Indian associations.
+        Associations that register today get their members connected, engaged,
+        and growing — in days, not months.
       </motion.p>
 
+      {/* 4-step promise */}
       <motion.div
-        initial={{ opacity: 0, y: 20 }}
+        initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.9, duration: 0.5 }}
-        className="relative mt-8 flex flex-col items-center gap-4"
+        transition={{ delay: 0.8, duration: 0.5 }}
+        className="relative mt-7 flex items-center gap-2 text-[11px] text-muted-foreground"
       >
-        <div className="grid grid-cols-2 gap-3">
-          {[
-            { icon: Building2,    text: "Register your Association" },
-            { icon: Users,        text: "Invite member companies" },
-            { icon: Network,      text: "Members connect & grow" },
-            { icon: BarChart3,    text: "Track it all with analytics" },
-          ].map((s, i) => (
-            <motion.div
-              key={s.text}
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1, transition: { delay: 1.1 + i * 0.1 } }}
-              className="flex items-center gap-2 rounded-xl border border-border/60 bg-card px-4 py-2.5"
-            >
-              <s.icon className="h-4 w-4 text-primary shrink-0" />
-              <span className="text-[11px] font-medium text-foreground">{s.text}</span>
-            </motion.div>
-          ))}
-        </div>
+        {[
+          { icon: Building2, text: "Register" },
+          { icon: UserPlus,  text: "Invite Companies" },
+          { icon: Users,     text: "Members Connect" },
+          { icon: TrendingUp,text: "Community Grows" },
+        ].map((s, i) => (
+          <div key={s.text} className="flex items-center gap-2">
+            {i > 0 && <ArrowRight className="h-3 w-3 text-muted-foreground/40 shrink-0" />}
+            <div className="flex items-center gap-1.5 rounded-lg border border-border/60 bg-card px-3 py-2">
+              <s.icon className="h-3.5 w-3.5 text-primary shrink-0" />
+              <span className="font-semibold text-foreground whitespace-nowrap">{s.text}</span>
+            </div>
+          </div>
+        ))}
+      </motion.div>
 
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 1.6, duration: 0.4 }}
-          className="flex gap-3 mt-2"
-        >
-          <Link to="/auth/register">
-            <Button size="sm" className="gap-2 shadow-lg shadow-primary/20">
-              Register Your Association <ArrowRight className="h-4 w-4" />
-            </Button>
-          </Link>
-          <Link to="/auth/login">
-            <Button size="sm" variant="outline">
-              Sign In
-            </Button>
-          </Link>
-        </motion.div>
+      {/* Primary CTA button — big and obvious */}
+      <motion.div
+        initial={{ opacity: 0, y: 16, scale: 0.95 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={{ delay: 1.2, duration: 0.5, type: "spring" }}
+        className="relative mt-8 flex flex-col items-center gap-3"
+      >
+        <Link to="/auth/register">
+          <Button size="lg" className="gap-2.5 px-8 py-5 text-base font-bold shadow-2xl shadow-primary/30">
+            Register Your Association — It's Free
+            <ArrowRight className="h-5 w-5" />
+          </Button>
+        </Link>
+        <Link to="/auth/login">
+          <p className="text-[11px] text-muted-foreground hover:text-foreground transition-colors">
+            Already have an account? Sign in →
+          </p>
+        </Link>
       </motion.div>
     </motion.div>
   );
