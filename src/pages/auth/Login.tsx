@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate, Link, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -37,7 +37,11 @@ export default function Login() {
   const [searchParams] = useSearchParams();
   const { toast } = useToast();
   const { user } = useAuth();
-  const redirectTo = searchParams.get('redirect');
+
+  const rawRedirect = searchParams.get('redirect');
+  const safeRedirect = rawRedirect && rawRedirect.startsWith('/') && !rawRedirect.startsWith('//')
+    ? rawRedirect
+    : null;
   
   const {
     register,
@@ -84,11 +88,18 @@ export default function Login() {
         description: 'You have been logged in successfully',
       });
 
-      navigate(redirectTo || '/select-role');
+      navigate(safeRedirect ?? '/select-role');
     } catch (error: any) {
+      const raw = (error?.message || '').toLowerCase();
+      const friendly = raw.includes('invalid login credentials')
+        ? 'Email or password is incorrect. If you signed up with Google, use "Continue with Google". Otherwise use "Forgot password?" to reset.'
+        : raw.includes('email not confirmed')
+        ? 'Please confirm your email address before signing in. Check your inbox for the confirmation link.'
+        : error?.message || 'Failed to login';
+
       toast({
         title: 'Error',
-        description: error.message || 'Failed to login',
+        description: friendly,
         variant: 'destructive',
       });
     } finally {
@@ -102,7 +113,7 @@ export default function Login() {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${window.location.origin}/select-role`,
+          redirectTo: `${window.location.origin}${safeRedirect ?? '/select-role'}`,
         },
       });
 
