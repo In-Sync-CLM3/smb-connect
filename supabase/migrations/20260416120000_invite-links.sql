@@ -29,7 +29,7 @@ ALTER TABLE invite_links ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Org admins can view their invite links"
   ON invite_links FOR SELECT
   USING (
-    is_admin()
+    is_admin(auth.uid())
     OR (
       organization_type = 'association' AND EXISTS (
         SELECT 1 FROM association_managers am
