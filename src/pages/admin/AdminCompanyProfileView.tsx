@@ -18,7 +18,9 @@ import {
   Briefcase,
   DollarSign,
   FileText,
+  Link2,
 } from "lucide-react";
+import { InviteLinkDialog } from "@/components/InviteLinkDialog";
 
 interface Company {
   id: string;
@@ -58,6 +60,7 @@ export default function AdminCompanyProfileView() {
   const [association, setAssociation] = useState<Association | null>(null);
   const [membersCount, setMembersCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [inviteLinkDialogOpen, setInviteLinkDialogOpen] = useState(false);
 
   useEffect(() => {
     if (id) {
@@ -191,6 +194,10 @@ export default function AdminCompanyProfileView() {
                   )}
                 </div>
                 <div className="flex gap-2">
+                  <Button variant="outline" onClick={() => setInviteLinkDialogOpen(true)}>
+                    <Link2 className="w-4 h-4 mr-2" />
+                    Invite Link
+                  </Button>
                   <Button
                     variant={company.is_active ? "destructive" : "default"}
                     onClick={toggleActiveStatus}
@@ -205,6 +212,16 @@ export default function AdminCompanyProfileView() {
             </div>
           </div>
         </div>
+
+        {inviteLinkDialogOpen && (
+          <InviteLinkDialog
+            open={inviteLinkDialogOpen}
+            onOpenChange={setInviteLinkDialogOpen}
+            organizationId={company.id}
+            organizationType="company"
+            organizationName={company.name}
+          />
+        )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* Contact Information */}

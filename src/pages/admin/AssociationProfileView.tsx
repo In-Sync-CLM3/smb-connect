@@ -4,11 +4,12 @@ import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { ArrowLeft, Building2, Mail, Phone, Globe, MapPin, Calendar, Edit, Users } from 'lucide-react';
+import { ArrowLeft, Building2, Mail, Phone, Globe, MapPin, Calendar, Edit, Users, Link2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { EditAssociationDialog } from '@/components/association/EditAssociationDialog';
 import { EditAssociationProfileDialog } from '@/components/association/EditAssociationProfileDialog';
 import { AddFunctionaryDialog } from '@/components/association/AddFunctionaryDialog';
+import { InviteLinkDialog } from '@/components/InviteLinkDialog';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 
 interface Association {
@@ -52,6 +53,7 @@ export default function AssociationProfileView() {
   const [editProfileDialogOpen, setEditProfileDialogOpen] = useState(false);
   const [addFunctionaryDialogOpen, setAddFunctionaryDialogOpen] = useState(false);
   const [editingFunctionary, setEditingFunctionary] = useState<Functionary | null>(null);
+  const [inviteLinkDialogOpen, setInviteLinkDialogOpen] = useState(false);
 
   useEffect(() => {
     if (id) {
@@ -127,6 +129,10 @@ export default function AssociationProfileView() {
               Back to Associations
             </Button>
             <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setInviteLinkDialogOpen(true)}>
+                <Link2 className="w-4 h-4 mr-2" />
+                Invite Link
+              </Button>
               <Button variant="outline" onClick={() => setEditDialogOpen(true)}>
                 <Edit className="w-4 h-4 mr-2" />
                 Quick Edit
@@ -398,6 +404,16 @@ export default function AssociationProfileView() {
           open={editProfileDialogOpen}
           onOpenChange={setEditProfileDialogOpen}
           onSuccess={loadAssociationData}
+        />
+      )}
+
+      {inviteLinkDialogOpen && (
+        <InviteLinkDialog
+          open={inviteLinkDialogOpen}
+          onOpenChange={setInviteLinkDialogOpen}
+          organizationId={association.id}
+          organizationType="association"
+          organizationName={association.name}
         />
       )}
 
