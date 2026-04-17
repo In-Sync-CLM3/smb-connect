@@ -3,13 +3,14 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Building2, Users, MessageSquare, LogOut, Settings, Radio, GraduationCap, CheckCircle2, Clock, TrendingUp, Upload, UserPlus, Mail, BarChart3 } from 'lucide-react';
+import { Building2, Users, MessageSquare, LogOut, Settings, Radio, GraduationCap, CheckCircle2, Clock, TrendingUp, Upload, UserPlus, Mail, BarChart3, Link2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useUserRole } from '@/hooks/useUserRole';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { RoleNavigation } from '@/components/RoleNavigation';
 import { useRoleContext } from '@/contexts/RoleContext';
 import { PageHeader } from '@/components/layout/PageHeader';
+import { InviteLinkDialog } from '@/components/InviteLinkDialog';
 
 export default function CompanyDashboard() {
   const navigate = useNavigate();
@@ -30,6 +31,7 @@ export default function CompanyDashboard() {
     onboardingCompletionRate: 0,
   });
   const [loading, setLoading] = useState(true);
+  const [inviteLinkDialogOpen, setInviteLinkDialogOpen] = useState(false);
 
   useEffect(() => {
     loadProfile();
@@ -344,9 +346,23 @@ export default function CompanyDashboard() {
                 <Settings className="w-4 h-4 mr-2" />
                 Settings
               </Button>
+              <Button className="w-full" onClick={() => setInviteLinkDialogOpen(true)} disabled={!company}>
+                <Link2 className="w-4 h-4 mr-2" />
+                Invite
+              </Button>
             </div>
           </CardContent>
         </Card>
+
+        {company && (
+          <InviteLinkDialog
+            open={inviteLinkDialogOpen}
+            onOpenChange={setInviteLinkDialogOpen}
+            organizationId={company.id}
+            organizationType="company"
+            organizationName={company.name}
+          />
+        )}
 
         {/* Bulk Upload Section */}
         <Card>
