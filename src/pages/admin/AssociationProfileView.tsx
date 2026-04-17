@@ -131,7 +131,7 @@ export default function AssociationProfileView() {
             <div className="flex gap-2">
               <Button variant="outline" onClick={() => setInviteLinkDialogOpen(true)}>
                 <Link2 className="w-4 h-4 mr-2" />
-                Invite Link
+                Invite
               </Button>
               <Button variant="outline" onClick={() => setEditDialogOpen(true)}>
                 <Edit className="w-4 h-4 mr-2" />

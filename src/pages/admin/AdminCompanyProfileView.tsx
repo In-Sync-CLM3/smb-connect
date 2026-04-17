@@ -196,7 +196,7 @@ export default function AdminCompanyProfileView() {
                 <div className="flex gap-2">
                   <Button variant="outline" onClick={() => setInviteLinkDialogOpen(true)}>
                     <Link2 className="w-4 h-4 mr-2" />
-                    Invite Link
+                    Invite
                   </Button>
                   <Button
                     variant={company.is_active ? "destructive" : "default"}
