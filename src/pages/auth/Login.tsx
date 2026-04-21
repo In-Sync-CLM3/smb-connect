@@ -15,6 +15,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { Mail, Lock, Eye, EyeOff } from 'lucide-react';
 import logo from '@/assets/smb-connect-logo.jpg';
 import heroImage from '@/assets/login-hero.png';
+import { PolicyFooterLinks } from '@/components/PolicyLayout';
 
 const loginSchema = z.object({
   email: z.string().email('Invalid email address'),
@@ -282,6 +283,11 @@ export default function Login() {
             <Link to="/auth/register" className="text-primary hover:underline">
               Register here
             </Link>
+          </div>
+          <div className="pt-2 w-full border-t">
+            <div className="pt-3">
+              <PolicyFooterLinks />
+            </div>
           </div>
         </CardFooter>
       </Card>

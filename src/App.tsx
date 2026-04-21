@@ -82,6 +82,10 @@ const DataExport = lazy(() => import("./pages/admin/DataExport"));
 const MemberConnectionRequests = lazy(() => import("./pages/admin/MemberConnectionRequests"));
 const JoinViaLink = lazy(() => import("./pages/join/JoinViaLink"));
 const AssociationWalkthrough = lazy(() => import("./pages/public/AssociationWalkthrough"));
+const Terms = lazy(() => import("./pages/public/Terms"));
+const RefundPolicy = lazy(() => import("./pages/public/RefundPolicy"));
+const PrivacyPolicy = lazy(() => import("./pages/public/PrivacyPolicy"));
+const ShippingPolicy = lazy(() => import("./pages/public/ShippingPolicy"));
 
 const queryClient = new QueryClient();
 
@@ -130,7 +134,7 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boole
 
 const AppContent = () => {
   const location = useLocation();
-  const hideHomeButton = ['/', '/auth/login', '/auth/register', '/walkthrough'].includes(location.pathname) || location.pathname.startsWith('/event/') || location.pathname.startsWith('/join/');
+  const hideHomeButton = ['/', '/auth/login', '/auth/register', '/walkthrough', '/terms', '/refund-policy', '/privacy-policy', '/shipping-policy'].includes(location.pathname) || location.pathname.startsWith('/event/') || location.pathname.startsWith('/join/');
 
   return (
     <>
@@ -709,6 +713,12 @@ const AppContent = () => {
           />
           {/* Public walkthrough - NO AUTH REQUIRED */}
           <Route path="/walkthrough" element={<AssociationWalkthrough />} />
+
+          {/* Public policy pages - NO AUTH REQUIRED */}
+          <Route path="/terms" element={<Terms />} />
+          <Route path="/refund-policy" element={<RefundPolicy />} />
+          <Route path="/privacy-policy" element={<PrivacyPolicy />} />
+          <Route path="/shipping-policy" element={<ShippingPolicy />} />
 
           {/* Public invite links - NO AUTH REQUIRED */}
           <Route path="/join/:token" element={<JoinViaLink />} />

@@ -12,6 +12,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Separator } from '@/components/ui/separator';
 import { Mail, Lock, User, Phone } from 'lucide-react';
 import logo from '@/assets/smb-connect-logo.jpg';
+import { PolicyFooterLinks } from '@/components/PolicyLayout';
 
 const registerSchema = z.object({
   firstName: z.string().min(2, 'First name must be at least 2 characters'),
@@ -258,6 +259,11 @@ export default function Register() {
             <Link to="/auth/login" className="text-primary hover:underline">
               Sign in here
             </Link>
+          </div>
+          <div className="pt-2 w-full border-t">
+            <div className="pt-3">
+              <PolicyFooterLinks />
+            </div>
           </div>
         </CardFooter>
       </Card>
