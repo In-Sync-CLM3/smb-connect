@@ -1,9 +1,10 @@
 import { Button } from "@/components/ui/button";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { Users, MessageSquare, TrendingUp } from "lucide-react";
 import logo from "@/assets/smb-connect-logo.jpg";
 import { useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
+import { PolicyFooterLinks } from "@/components/PolicyLayout";
 
 const Index = () => {
   const navigate = useNavigate();
@@ -62,9 +63,21 @@ const Index = () => {
             <Button size="lg" onClick={() => navigate('/auth/register')}>
               Start Free Trial
             </Button>
-            <Button size="lg" variant="outline">
+            <Button size="lg" variant="outline" onClick={() => navigate('/walkthrough')}>
               Learn More
             </Button>
+          </div>
+
+          <div className="flex flex-wrap justify-center gap-x-6 gap-y-2 pt-2 text-sm">
+            <Link to="/auth/login" className="text-primary hover:underline">
+              Sign In
+            </Link>
+            <Link to="/auth/register" className="text-primary hover:underline">
+              Create Account
+            </Link>
+            <Link to="/walkthrough" className="text-primary hover:underline">
+              Product Walkthrough
+            </Link>
           </div>
         </div>
 
@@ -101,6 +114,15 @@ const Index = () => {
           </div>
         </div>
       </main>
+
+      <footer className="border-t bg-card/50 mt-16">
+        <div className="container mx-auto px-4 py-6">
+          <PolicyFooterLinks />
+          <p className="mt-4 text-center text-xs text-muted-foreground">
+            © {new Date().getFullYear()} SMB Connect. All rights reserved.
+          </p>
+        </div>
+      </footer>
     </div>
   );
 };

@@ -10,6 +10,7 @@ import { RoleProvider } from "./contexts/RoleContext";
 import { HelpWidget } from "./components/HelpWidget";
 
 // Lazy load all pages for code splitting
+const Index = lazy(() => import("./pages/Index"));
 const Login = lazy(() => import("./pages/auth/Login"));
 const Register = lazy(() => import("./pages/auth/Register"));
 const ResetPassword = lazy(() => import("./pages/auth/ResetPassword"));
@@ -143,7 +144,7 @@ const AppContent = () => {
       <ErrorBoundary>
       <Suspense fallback={<PageLoader />}>
         <Routes>
-          <Route path="/" element={<Login />} />
+          <Route path="/" element={<Index />} />
             <Route path="/auth/login" element={<Login />} />
             <Route path="/auth/register" element={<Register />} />
             <Route path="/reset-password" element={<ResetPassword />} />
