@@ -653,6 +653,141 @@ const EventLandingPageView = () => {
             }
           });
           
+          // Validate coupon entered in modal-style forms and update the displayed amount.
+          // Watches #modal-coupon input. Updates #modal-amount (form value), and any of
+          // #modal-fee-display / #modal-amount-display / #modal-final-amount (visual).
+          // Feedback goes in #modal-coupon-message if present.
+          function hookModalCoupon() {
+            var couponInput = document.getElementById('modal-coupon');
+            if (!couponInput || couponInput.__smbCouponHooked) return;
+            couponInput.__smbCouponHooked = true;
+
+            var applyBtn = document.getElementById('modal-apply-coupon')
+              || document.getElementById('modal-coupon-apply')
+              || document.getElementById('apply-coupon-btn');
+
+            function showFeedback(msg, isError) {
+              var msgEl = document.getElementById('modal-coupon-message');
+              if (msgEl) {
+                msgEl.textContent = msg;
+                msgEl.style.color = isError ? '#dc2626' : '#16a34a';
+                msgEl.style.display = msg ? 'block' : 'none';
+              }
+              if (couponInput && couponInput.style) {
+                couponInput.style.borderColor = msg ? (isError ? '#dc2626' : '#16a34a') : '';
+              }
+            }
+
+            function inr(n) { return '₹' + Number(n).toLocaleString('en-IN'); }
+
+            function updateAmountDisplay(originalFee, finalAmount) {
+              // Hidden / form value
+              var amountEl = document.getElementById('modal-amount');
+              if (amountEl) {
+                if (amountEl.tagName === 'INPUT' || amountEl.tagName === 'TEXTAREA') {
+                  amountEl.value = String(finalAmount);
+                } else {
+                  amountEl.textContent = String(finalAmount);
+                }
+              }
+              // Visual display elements (any/all of these can exist)
+              var displayHtml = finalAmount === originalFee
+                ? inr(originalFee)
+                : '<span style="text-decoration:line-through;color:#94a3b8;">' + inr(originalFee) + '</span> ' +
+                  '<span style="color:#16a34a;font-weight:700;">' + inr(finalAmount) + '</span>';
+              ['modal-fee-display', 'modal-amount-display', 'modal-final-amount'].forEach(function(id) {
+                var el = document.getElementById(id);
+                if (!el) return;
+                if (id === 'modal-final-amount') {
+                  el.textContent = inr(finalAmount);
+                } else {
+                  el.innerHTML = displayHtml;
+                }
+              });
+            }
+
+            var validating = false;
+            function doValidate() {
+              if (validating) return;
+              var code = (couponInput.value || '').trim().toUpperCase();
+              if (!code) {
+                updateAmountDisplay(registrationFee, registrationFee);
+                showFeedback('', false);
+                return;
+              }
+              var emailEl = document.getElementById('modal-email')
+                || document.querySelector('input[name="email"], input[type="email"]');
+              var email = emailEl && emailEl.value ? emailEl.value.trim() : '';
+              if (!email) {
+                showFeedback('Please enter your email first', true);
+                return;
+              }
+
+              validating = true;
+              if (applyBtn) {
+                applyBtn.disabled = true;
+                applyBtn.dataset.smbOrigText = applyBtn.textContent;
+                applyBtn.textContent = 'Validating...';
+              }
+
+              fetch(supabaseUrl + '/rest/v1/rpc/validate_coupon', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'apikey': publishableKey },
+                body: JSON.stringify({
+                  p_code: code,
+                  p_landing_page_id: landingPageId,
+                  p_email: email
+                })
+              })
+              .then(function(res) { return res.json(); })
+              .then(function(data) {
+                if (data && data.valid) {
+                  var discount = data.discount_type === 'percentage'
+                    ? Math.round((registrationFee * Number(data.discount_value)) / 100)
+                    : Number(data.discount_value);
+                  discount = Math.min(discount, registrationFee);
+                  var finalAmount = registrationFee - discount;
+                  updateAmountDisplay(registrationFee, finalAmount);
+                  var msg = 'Coupon applied — you save ' + inr(discount);
+                  if (finalAmount === 0) msg = 'Coupon applied — registration is FREE';
+                  showFeedback(msg, false);
+                } else {
+                  updateAmountDisplay(registrationFee, registrationFee);
+                  showFeedback((data && data.message) || 'Invalid coupon code', true);
+                }
+              })
+              .catch(function(err) {
+                console.error('[SMB Coupon] validate error:', err);
+                showFeedback('Could not validate coupon. Try again.', true);
+              })
+              .finally(function() {
+                validating = false;
+                if (applyBtn) {
+                  applyBtn.disabled = false;
+                  if (applyBtn.dataset.smbOrigText) applyBtn.textContent = applyBtn.dataset.smbOrigText;
+                }
+              });
+            }
+
+            if (applyBtn) {
+              applyBtn.addEventListener('click', function(e) {
+                e.preventDefault();
+                doValidate();
+              });
+            }
+            // Always also validate on blur / Enter key as a fallback
+            couponInput.addEventListener('blur', doValidate);
+            couponInput.addEventListener('keydown', function(e) {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                doValidate();
+              }
+            });
+
+            // Show the original fee on first hook so the modal isn't blank
+            if (registrationFee > 0) updateAmountDisplay(registrationFee, registrationFee);
+          }
+
           // Hook into custom "Pay & Register" buttons commonly used in landing pages
           function hookPayButton() {
             var payBtn = document.getElementById('modal-pay-btn');
@@ -715,10 +850,12 @@ const EventLandingPageView = () => {
           // Inject coupon section and hook pay button when DOM is ready
           function initAll() {
             injectCouponSection();
+            hookModalCoupon();
             hookPayButton();
-            
-            // Also observe for dynamically added modal buttons
+
+            // Also observe for dynamically added modal elements (modal opens after page load)
             var observer = new MutationObserver(function(mutations) {
+              hookModalCoupon();
               hookPayButton();
             });
             observer.observe(document.body, { childList: true, subtree: true });
