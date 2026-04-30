@@ -68,3 +68,12 @@ verify_jwt = true
 
 [functions.export-table-csv]
 verify_jwt = false
+
+[functions.create-razorpay-order]
+verify_jwt = false
+
+[functions.verify-razorpay-payment]
+verify_jwt = false
+
+[functions.razorpay-webhook]
+verify_jwt = false

@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { Loader2, AlertCircle, CheckCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { openRazorpayCheckout } from '@/lib/razorpay';
 
 
 interface PageInfo {
@@ -150,32 +151,118 @@ const EventLandingPageView = () => {
             utm_medium: utmMedium,
             utm_campaign: utmCampaign
           };
-          
-          const response = await fetch(
-            `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/process-event-registration`,
+
+          // Step 1: ask the server whether this registration requires payment.
+          // The server is the source of truth for the amount (it re-runs
+          // validate_event_registration including coupon math).
+          const orderRes = await fetch(
+            `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-razorpay-order`,
             {
               method: 'POST',
               headers: EDGE_FUNCTION_HEADERS,
-              body: JSON.stringify(requestBody),
+              body: JSON.stringify({
+                purpose: 'event_registration',
+                metadata: requestBody,
+              }),
             }
           );
+          const orderResult = await orderRes.json();
 
-          const result = await response.json();
-
-          if (!response.ok) {
+          if (!orderRes.ok) {
             setRegistrationStatus('error');
-            setRegistrationMessage(result.error || result.message || 'Registration failed. Please try again.');
+            setRegistrationMessage(orderResult.error || 'Could not start registration. Please try again.');
+            iframeRef.current?.contentWindow?.postMessage(
+              { type: 'registration-error', message: orderResult.error || 'Could not start registration.' },
+              '*'
+            );
             return;
           }
 
-          setRegistrationStatus('success');
-          setRegistrationMessage(result.message);
+          // Free / 100%-coupon path — fall back to direct registration
+          if (orderResult.skip_payment) {
+            const response = await fetch(
+              `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/process-event-registration`,
+              {
+                method: 'POST',
+                headers: EDGE_FUNCTION_HEADERS,
+                body: JSON.stringify(requestBody),
+              }
+            );
 
-          // Notify the iframe about successful registration
-          iframeRef.current?.contentWindow?.postMessage(
-            { type: 'registration-success', message: result.message },
-            '*'
-          );
+            const result = await response.json();
+
+            if (!response.ok) {
+              setRegistrationStatus('error');
+              setRegistrationMessage(result.error || result.message || 'Registration failed. Please try again.');
+              return;
+            }
+
+            setRegistrationStatus('success');
+            setRegistrationMessage(result.message);
+            iframeRef.current?.contentWindow?.postMessage(
+              { type: 'registration-success', message: result.message },
+              '*'
+            );
+            return;
+          }
+
+          // Paid path — open Razorpay checkout
+          setRegistrationStatus('idle'); // hide overlay so the modal is visible
+          await openRazorpayCheckout({
+            key: orderResult.key_id,
+            amount: orderResult.amount,
+            currency: orderResult.currency,
+            name: currentPage.association?.name || 'SMB Connect',
+            description: currentPage.title,
+            order_id: orderResult.razorpay_order_id,
+            prefill: orderResult.prefill,
+            theme: { color: '#1e3a5f' },
+            handler: async (response) => {
+              setRegistrationStatus('submitting');
+              try {
+                const verifyRes = await fetch(
+                  `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/verify-razorpay-payment`,
+                  {
+                    method: 'POST',
+                    headers: EDGE_FUNCTION_HEADERS,
+                    body: JSON.stringify({
+                      payment_id: orderResult.payment_id,
+                      razorpay_order_id: response.razorpay_order_id,
+                      razorpay_payment_id: response.razorpay_payment_id,
+                      razorpay_signature: response.razorpay_signature,
+                    }),
+                  }
+                );
+                const verifyResult = await verifyRes.json();
+                if (!verifyRes.ok || !verifyResult.success) {
+                  setRegistrationStatus('error');
+                  setRegistrationMessage(verifyResult.error || 'Payment verification failed. If you were charged, please contact support.');
+                  iframeRef.current?.contentWindow?.postMessage(
+                    { type: 'registration-error', message: verifyResult.error || 'Payment verification failed.' },
+                    '*'
+                  );
+                  return;
+                }
+                setRegistrationStatus('success');
+                setRegistrationMessage(verifyResult.message);
+                iframeRef.current?.contentWindow?.postMessage(
+                  { type: 'registration-success', message: verifyResult.message },
+                  '*'
+                );
+              } catch (verifyErr) {
+                console.error('Verify error:', verifyErr);
+                setRegistrationStatus('error');
+                setRegistrationMessage('Payment verification failed. If you were charged, please contact support.');
+              }
+            },
+            modal: {
+              ondismiss: () => {
+                // User closed the modal without paying — webhook will mark failed/timeout.
+                // Allow them to retry.
+                registrationInFlight.current = false;
+              },
+            },
+          });
         } catch (err) {
           setRegistrationStatus('error');
           const errorMsg = 'An error occurred during registration. Please try again.';
