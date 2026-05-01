@@ -122,6 +122,32 @@ const EventRegistrations = () => {
     enabled: !!id && !!userId,
   });
 
+  // Map of registration_id → payment row, for the Payment column
+  const { data: paymentByRegistration } = useQuery({
+    queryKey: ['event-registration-payments', id, registrations?.length ?? 0],
+    queryFn: async () => {
+      const regIds = (registrations ?? []).map(r => r.id);
+      if (regIds.length === 0) return {} as Record<string, { status: string; razorpay_payment_id: string | null; amount: number | null; paid_at: string | null }>;
+      const { data, error } = await supabase
+        .from('payments')
+        .select('reference_id, status, razorpay_payment_id, amount, paid_at')
+        .eq('purpose', 'event_registration')
+        .in('reference_id', regIds);
+      if (error) throw error;
+      const map: Record<string, { status: string; razorpay_payment_id: string | null; amount: number | null; paid_at: string | null }> = {};
+      for (const row of (data ?? []) as Array<{ reference_id: string; status: string; razorpay_payment_id: string | null; amount: number | null; paid_at: string | null }>) {
+        map[row.reference_id] = {
+          status: row.status,
+          razorpay_payment_id: row.razorpay_payment_id,
+          amount: row.amount,
+          paid_at: row.paid_at,
+        };
+      }
+      return map;
+    },
+    enabled: !!id && !!userId && (registrations?.length ?? 0) > 0,
+  });
+
   interface OnboardingRow {
     registration_id: string;
     first_name: string;
@@ -489,6 +515,7 @@ const EventRegistrations = () => {
                   <TableHead>Source</TableHead>
                   <TableHead>Coupon</TableHead>
                   <TableHead>Amount</TableHead>
+                  <TableHead>Payment</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Registered</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
@@ -533,6 +560,45 @@ const EventRegistrations = () => {
                       ) : (
                         <span className="text-muted-foreground">-</span>
                       )}
+                    </TableCell>
+                    <TableCell>
+                      {(() => {
+                        const payment = paymentByRegistration?.[reg.id];
+                        if (payment) {
+                          if (payment.status === 'paid') {
+                            return (
+                              <Badge
+                                variant="outline"
+                                className="bg-green-50 text-green-700 border-green-200"
+                                title={payment.razorpay_payment_id || ''}
+                              >
+                                Paid
+                              </Badge>
+                            );
+                          }
+                          if (payment.status === 'failed') {
+                            return (
+                              <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200">
+                                Failed
+                              </Badge>
+                            );
+                          }
+                          return (
+                            <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">
+                              {payment.status}
+                            </Badge>
+                          );
+                        }
+                        // No payment row → free registration (or paid via process-event-registration before payments existed)
+                        if ((reg.final_amount ?? 0) === 0) {
+                          return (
+                            <Badge variant="outline" className="bg-slate-50 text-slate-600 border-slate-200">
+                              Free
+                            </Badge>
+                          );
+                        }
+                        return <span className="text-muted-foreground text-xs">—</span>;
+                      })()}
                     </TableCell>
                     <TableCell>{getStatusBadge(reg.status)}</TableCell>
                     <TableCell>

@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Building2, Users, LogOut, Settings, Radio, Calendar, GraduationCap, CheckCircle2, Clock, TrendingUp, Upload, UserPlus, Mail, BarChart3, Link2 } from 'lucide-react';
+import { Building2, Users, LogOut, Settings, Radio, Calendar, GraduationCap, CheckCircle2, Clock, TrendingUp, Upload, UserPlus, Mail, BarChart3, Link2, IndianRupee } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useUserRole } from '@/hooks/useUserRole';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -29,6 +29,9 @@ export default function AssociationDashboard() {
     onboardingCompleted: 0,
     onboardingInProgress: 0,
     onboardingCompletionRate: 0,
+    totalRevenue: 0,
+    monthRevenue: 0,
+    paidRegistrations: 0,
   });
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<any>(null);
@@ -254,6 +257,31 @@ export default function AssociationDashboard() {
         ? Math.round((onboardingCompleted || 0) / onboardingTotal * 100)
         : 0;
 
+      // Revenue from paid event registrations (registrations only exist after fulfillment)
+      const { data: lpRows } = await supabase
+        .from('event_landing_pages')
+        .select('id')
+        .eq('association_id', associationId);
+      const lpIds = (lpRows || []).map((r: { id: string }) => r.id);
+
+      let totalRevenue = 0;
+      let monthRevenue = 0;
+      let paidRegistrations = 0;
+      if (lpIds.length > 0) {
+        const { data: regs } = await supabase
+          .from('event_registrations')
+          .select('final_amount, created_at')
+          .in('landing_page_id', lpIds)
+          .gt('final_amount', 0);
+        const monthAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+        for (const r of (regs || []) as Array<{ final_amount: number | null; created_at: string }>) {
+          const amt = Number(r.final_amount || 0);
+          totalRevenue += amt;
+          paidRegistrations += 1;
+          if (r.created_at >= monthAgo) monthRevenue += amt;
+        }
+      }
+
       setStats({
         totalCompanies: companiesCount || 0,
         totalMembers,
@@ -265,6 +293,9 @@ export default function AssociationDashboard() {
         onboardingCompleted: onboardingCompleted || 0,
         onboardingInProgress,
         onboardingCompletionRate,
+        totalRevenue,
+        monthRevenue,
+        paidRegistrations,
       });
     } catch (error: any) {
       console.error('Error loading stats:', error);
@@ -335,7 +366,7 @@ export default function AssociationDashboard() {
         </div>
 
         {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Member Companies</CardTitle>
@@ -375,8 +406,8 @@ export default function AssociationDashboard() {
             </CardContent>
           </Card>
 
-          <Card 
-            className="cursor-pointer hover:shadow-lg transition-shadow" 
+          <Card
+            className="cursor-pointer hover:shadow-lg transition-shadow"
             onClick={() => navigate('/association/invitations')}
           >
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -390,6 +421,28 @@ export default function AssociationDashboard() {
                 <>
                   <div className="text-2xl font-bold">{stats.pendingInvitations}</div>
                   <p className="text-xs text-muted-foreground">Companies awaiting response</p>
+                </>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card
+            className="cursor-pointer hover:shadow-lg transition-shadow"
+            onClick={() => navigate('/admin/event-landing-pages')}
+          >
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Event Revenue</CardTitle>
+              <IndianRupee className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              {loading ? (
+                <div className="h-8 w-16 animate-pulse bg-muted rounded"></div>
+              ) : (
+                <>
+                  <div className="text-2xl font-bold">₹{stats.totalRevenue.toLocaleString('en-IN')}</div>
+                  <p className="text-xs text-muted-foreground">
+                    ₹{stats.monthRevenue.toLocaleString('en-IN')} this month · {stats.paidRegistrations} paid
+                  </p>
                 </>
               )}
             </CardContent>

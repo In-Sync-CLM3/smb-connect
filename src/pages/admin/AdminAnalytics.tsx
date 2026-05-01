@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft, TrendingUp, Users, Building2, Mail, MessageCircle, Activity, Settings, LogOut, GraduationCap, CheckCircle2, Clock, UserCheck } from "lucide-react";
+import { ArrowLeft, TrendingUp, Users, Building2, Mail, MessageCircle, Activity, Settings, LogOut, GraduationCap, CheckCircle2, Clock, UserCheck, IndianRupee, XCircle, Calendar } from "lucide-react";
 import { toast } from "sonner";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -76,6 +76,11 @@ const AdminAnalytics = () => {
     onboardingCompleted: 0,
     onboardingInProgress: 0,
     onboardingCompletionRate: 0,
+    totalRevenue: 0,
+    monthRevenue: 0,
+    paidPayments: 0,
+    failedPayments: 0,
+    paymentSuccessRate: 0,
   });
   
   const [growthData, setGrowthData] = useState<TimeSeriesData[]>([]);
@@ -170,8 +175,38 @@ const AdminAnalytics = () => {
       ]);
 
       const onboardingInProgress = (onboardingTotal || 0) - (onboardingCompleted || 0);
-      const onboardingCompletionRate = onboardingTotal && onboardingTotal > 0 
-        ? Math.round((onboardingCompleted || 0) / onboardingTotal * 100) 
+      const onboardingCompletionRate = onboardingTotal && onboardingTotal > 0
+        ? Math.round((onboardingCompleted || 0) / onboardingTotal * 100)
+        : 0;
+
+      // Platform-wide payment stats (admin RLS sees everything in `payments`)
+      const monthAgoIso = getDaysAgo(30);
+      const [
+        { data: paidRows },
+        { count: failedCount },
+      ] = await Promise.all([
+        supabase
+          .from('payments')
+          .select('amount, paid_at')
+          .eq('status', 'paid'),
+        supabase
+          .from('payments')
+          .select('*', { count: 'exact', head: true })
+          .eq('status', 'failed'),
+      ]);
+
+      let totalRevenue = 0;
+      let monthRevenue = 0;
+      const paidPayments = (paidRows || []).length;
+      for (const r of (paidRows || []) as Array<{ amount: number | null; paid_at: string | null }>) {
+        const amt = Number(r.amount || 0);
+        totalRevenue += amt;
+        if (r.paid_at && r.paid_at >= monthAgoIso) monthRevenue += amt;
+      }
+      const failedPayments = failedCount || 0;
+      const totalAttempts = paidPayments + failedPayments;
+      const paymentSuccessRate = totalAttempts > 0
+        ? Math.round((paidPayments / totalAttempts) * 100)
         : 0;
 
       setStats({
@@ -188,6 +223,11 @@ const AdminAnalytics = () => {
         onboardingCompleted: onboardingCompleted || 0,
         onboardingInProgress,
         onboardingCompletionRate,
+        totalRevenue,
+        monthRevenue,
+        paidPayments,
+        failedPayments,
+        paymentSuccessRate,
       });
 
       // Load growth data
@@ -556,6 +596,61 @@ const AdminAnalytics = () => {
               </div>
               <div className="text-3xl font-bold text-blue-600">{stats.onboardingCompletionRate}%</div>
               <p className="text-xs text-muted-foreground">Overall completion</p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Payments Section */}
+      <Card className="border-none shadow-lg">
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <IndianRupee className="h-5 w-5 text-primary" />
+            <CardTitle>Payments</CardTitle>
+          </div>
+          <CardDescription>Razorpay transactions across the platform</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <IndianRupee className="h-4 w-4 text-green-600" />
+                <span className="text-sm">Total Revenue</span>
+              </div>
+              <div className="text-3xl font-bold text-green-600">₹{stats.totalRevenue.toLocaleString('en-IN')}</div>
+              <p className="text-xs text-muted-foreground">All-time captured</p>
+            </div>
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <Calendar className="h-4 w-4 text-blue-600" />
+                <span className="text-sm">This Month</span>
+              </div>
+              <div className="text-3xl font-bold text-blue-600">₹{stats.monthRevenue.toLocaleString('en-IN')}</div>
+              <p className="text-xs text-muted-foreground">Last 30 days</p>
+            </div>
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <CheckCircle2 className="h-4 w-4 text-green-600" />
+                <span className="text-sm">Successful</span>
+              </div>
+              <div className="text-3xl font-bold">{stats.paidPayments}</div>
+              <p className="text-xs text-muted-foreground">Captured payments</p>
+            </div>
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <XCircle className="h-4 w-4 text-red-600" />
+                <span className="text-sm">Failed</span>
+              </div>
+              <div className="text-3xl font-bold text-red-600">{stats.failedPayments}</div>
+              <p className="text-xs text-muted-foreground">Declined / errored</p>
+            </div>
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <TrendingUp className="h-4 w-4 text-blue-600" />
+                <span className="text-sm">Success Rate</span>
+              </div>
+              <div className="text-3xl font-bold text-blue-600">{stats.paymentSuccessRate}%</div>
+              <p className="text-xs text-muted-foreground">Paid / (paid + failed)</p>
             </div>
           </div>
         </CardContent>

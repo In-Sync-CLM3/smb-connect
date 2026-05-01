@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { BackButton } from "@/components/BackButton";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { TrendingUp, Users, Building2, Activity, GraduationCap, CheckCircle2, Clock, BarChart3, UserCheck } from "lucide-react";
+import { TrendingUp, Users, Building2, Activity, GraduationCap, CheckCircle2, Clock, BarChart3, UserCheck, IndianRupee, Calendar } from "lucide-react";
 import { toast } from "sonner";
 import {
   LineChart,
@@ -65,6 +65,10 @@ const AssociationAnalytics = () => {
     onboardingCompletionRate: 0,
     totalPosts: 0,
     totalConnections: 0,
+    totalRevenue: 0,
+    monthRevenue: 0,
+    paidRegistrations: 0,
+    avgTicketSize: 0,
   });
   
   const [growthData, setGrowthData] = useState<TimeSeriesData[]>([]);
@@ -161,6 +165,32 @@ const AssociationAnalytics = () => {
       const onboardingInProgress = (onboardingTotal || 0) - (onboardingCompleted || 0);
       const onboardingCompletionRate = onboardingTotal ? Math.round((onboardingCompleted / onboardingTotal) * 100) : 0;
 
+      // Revenue from paid event registrations under this association
+      const { data: lpRows } = await supabase
+        .from('event_landing_pages')
+        .select('id')
+        .eq('association_id', associationId);
+      const lpIds = (lpRows || []).map((r: { id: string }) => r.id);
+
+      let totalRevenue = 0;
+      let monthRevenue = 0;
+      let paidRegistrations = 0;
+      if (lpIds.length > 0) {
+        const { data: regs } = await supabase
+          .from('event_registrations')
+          .select('final_amount, created_at')
+          .in('landing_page_id', lpIds)
+          .gt('final_amount', 0);
+        const monthAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+        for (const r of (regs || []) as Array<{ final_amount: number | null; created_at: string }>) {
+          const amt = Number(r.final_amount || 0);
+          totalRevenue += amt;
+          paidRegistrations += 1;
+          if (r.created_at >= monthAgo) monthRevenue += amt;
+        }
+      }
+      const avgTicketSize = paidRegistrations > 0 ? Math.round(totalRevenue / paidRegistrations) : 0;
+
       setStats({
         totalMembers: membersCount || 0,
         totalCompanies: activeCompaniesCount || 0,
@@ -175,6 +205,10 @@ const AssociationAnalytics = () => {
         onboardingCompletionRate,
         totalPosts: totalPosts || 0,
         totalConnections: totalConnections || 0,
+        totalRevenue,
+        monthRevenue,
+        paidRegistrations,
+        avgTicketSize,
       });
 
       // Load growth data
@@ -471,6 +505,53 @@ const AssociationAnalytics = () => {
             </CardContent>
           </Card>
         </div>
+
+        {/* Event Revenue */}
+        <Card className="border-primary/20">
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <IndianRupee className="h-5 w-5 text-primary" />
+              <CardTitle>Event Revenue</CardTitle>
+            </div>
+            <CardDescription>Paid event registrations across your association's landing pages</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <IndianRupee className="h-4 w-4 text-green-600" />
+                  <span className="text-sm">Total Revenue</span>
+                </div>
+                <div className="text-3xl font-bold text-green-600">₹{stats.totalRevenue.toLocaleString('en-IN')}</div>
+                <p className="text-xs text-muted-foreground">All-time paid registrations</p>
+              </div>
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <Calendar className="h-4 w-4 text-blue-600" />
+                  <span className="text-sm">This Month</span>
+                </div>
+                <div className="text-3xl font-bold text-blue-600">₹{stats.monthRevenue.toLocaleString('en-IN')}</div>
+                <p className="text-xs text-muted-foreground">Last 30 days</p>
+              </div>
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <UserCheck className="h-4 w-4 text-primary" />
+                  <span className="text-sm">Paid Registrations</span>
+                </div>
+                <div className="text-3xl font-bold">{stats.paidRegistrations}</div>
+                <p className="text-xs text-muted-foreground">Successful payments</p>
+              </div>
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <TrendingUp className="h-4 w-4 text-orange-600" />
+                  <span className="text-sm">Avg Ticket Size</span>
+                </div>
+                <div className="text-3xl font-bold text-orange-600">₹{stats.avgTicketSize.toLocaleString('en-IN')}</div>
+                <p className="text-xs text-muted-foreground">Per paid registration</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Growth Trends */}
         <Card className="border-primary/20">
