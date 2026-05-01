@@ -641,15 +641,27 @@ const EventLandingPageView = () => {
           // Listen for registration result
           window.addEventListener('message', function(e) {
             if (e.data?.type === 'registration-success') {
-              // Show success message in the form area
+              var successHtml = '<div style="padding: 24px; text-align: center; color: #16a34a; font-size: 18px;">' +
+                '<svg style="width: 56px; height: 56px; margin: 0 auto 12px;" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path></svg>' +
+                '<p style="margin: 0; font-weight: 700; font-size: 20px;">Payment Successful!</p>' +
+                '<p style="margin: 10px 0 0; font-size: 14px; color: #166534;">' + (e.data.message || 'Your registration is confirmed.') + '</p>' +
+              '</div>';
+
+              // Replace any forms with the success message
               var forms = document.querySelectorAll('form');
-              forms.forEach(function(form) {
-                form.innerHTML = '<div style="padding: 20px; text-align: center; color: #16a34a; font-size: 18px;">' +
-                  '<svg style="width: 48px; height: 48px; margin: 0 auto 10px;" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path></svg>' +
-                  '<p style="margin: 0; font-weight: bold;">Registration Successful!</p>' +
-                  '<p style="margin: 10px 0 0; font-size: 14px;">' + e.data.message + '</p>' +
-                '</div>';
-              });
+              forms.forEach(function(form) { form.innerHTML = successHtml; });
+
+              // Also replace any payment-button-only sections (non-form pay flows)
+              var paySections = document.querySelectorAll('#smb-payment-section, .smb-payment-section');
+              paySections.forEach(function(sec) { sec.innerHTML = successHtml; });
+
+              // If a #modal-pay-btn exists outside any form/pay-section, swap the button itself
+              var loosePayBtn = document.getElementById('modal-pay-btn');
+              if (loosePayBtn && !loosePayBtn.closest('form, #smb-payment-section, .smb-payment-section')) {
+                var wrap = document.createElement('div');
+                wrap.innerHTML = successHtml;
+                loosePayBtn.replaceWith(wrap);
+              }
             }
           });
           

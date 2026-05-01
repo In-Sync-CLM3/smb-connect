@@ -843,9 +843,113 @@ const CreateLandingPage = () => {
                         </Button>
                       </div>
                       <p className="text-xs text-muted-foreground">
-                        <strong>Important:</strong> The key line is <code className="bg-background px-1 rounded">window.parent.postMessage</code> with type <code className="bg-background px-1 rounded">'event-registration'</code>. 
+                        <strong>Important:</strong> The key line is <code className="bg-background px-1 rounded">window.parent.postMessage</code> with type <code className="bg-background px-1 rounded">'event-registration'</code>.
                         You can adapt the form fields to match your design — just make sure <code className="bg-background px-1 rounded">email</code> and <code className="bg-background px-1 rounded">first_name</code> are always sent.
                       </p>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {registrationEnabled && parseFloat(registrationFee || '0') > 0 && (
+                  <Card className="border-primary/30 bg-primary/5">
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-base">💳 Razorpay Payment Button</CardTitle>
+                      <CardDescription>
+                        For paid events, drop this block into your HTML. The platform auto-hooks the Pay button to open Razorpay, validates the coupon, updates the displayed amount, and shows a success message after payment.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      <div className="relative">
+                        <pre className="bg-background border rounded-lg p-4 text-xs font-mono overflow-x-auto whitespace-pre-wrap">
+{`<div id="smb-payment-section" style="max-width:480px;margin:24px auto;padding:24px;border:1px solid #e2e8f0;border-radius:12px;font-family:system-ui,sans-serif;">
+  <h3 style="margin:0 0 16px;">Register for the Event</h3>
+
+  <input id="modal-firstname" placeholder="First Name *" required
+         style="width:100%;padding:10px;margin-bottom:8px;border:1px solid #cbd5e1;border-radius:6px;" />
+  <input id="modal-lastname"  placeholder="Last Name"
+         style="width:100%;padding:10px;margin-bottom:8px;border:1px solid #cbd5e1;border-radius:6px;" />
+  <input id="modal-email" type="email" placeholder="Email *" required
+         style="width:100%;padding:10px;margin-bottom:8px;border:1px solid #cbd5e1;border-radius:6px;" />
+  <input id="modal-mobile" placeholder="Mobile Number"
+         style="width:100%;padding:10px;margin-bottom:12px;border:1px solid #cbd5e1;border-radius:6px;" />
+
+  <!-- Coupon: validated automatically; updates #modal-amount + #modal-fee-display -->
+  <div style="display:flex;gap:8px;margin-bottom:8px;">
+    <input id="modal-coupon" placeholder="Coupon code (optional)"
+           style="flex:1;padding:10px;border:1px solid #cbd5e1;border-radius:6px;text-transform:uppercase;" />
+    <button type="button" id="modal-apply-coupon"
+            style="padding:10px 16px;background:#6366f1;color:#fff;border:0;border-radius:6px;cursor:pointer;">Apply</button>
+  </div>
+  <div id="modal-coupon-message" style="font-size:13px;margin-bottom:12px;display:none;"></div>
+
+  <!-- Amount display: platform updates this on coupon apply -->
+  <div style="display:flex;justify-content:space-between;align-items:center;padding:12px;background:#f8fafc;border-radius:6px;margin-bottom:16px;">
+    <span style="color:#64748b;">Amount Payable</span>
+    <span id="modal-fee-display" style="font-size:20px;font-weight:700;color:#0f172a;">₹0</span>
+  </div>
+  <input type="hidden" id="modal-amount" />
+
+  <!-- Pay button: platform hooks click → opens Razorpay → verifies → success -->
+  <button type="button" id="modal-pay-btn"
+          style="width:100%;padding:14px;background:#1e3a5f;color:#fff;border:0;border-radius:8px;font-size:16px;font-weight:600;cursor:pointer;">
+    Pay & Register
+  </button>
+</div>`}
+                        </pre>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="absolute top-2 right-2"
+                          onClick={() => {
+                            const snippet = `<div id="smb-payment-section" style="max-width:480px;margin:24px auto;padding:24px;border:1px solid #e2e8f0;border-radius:12px;font-family:system-ui,sans-serif;">
+  <h3 style="margin:0 0 16px;">Register for the Event</h3>
+
+  <input id="modal-firstname" placeholder="First Name *" required
+         style="width:100%;padding:10px;margin-bottom:8px;border:1px solid #cbd5e1;border-radius:6px;" />
+  <input id="modal-lastname"  placeholder="Last Name"
+         style="width:100%;padding:10px;margin-bottom:8px;border:1px solid #cbd5e1;border-radius:6px;" />
+  <input id="modal-email" type="email" placeholder="Email *" required
+         style="width:100%;padding:10px;margin-bottom:8px;border:1px solid #cbd5e1;border-radius:6px;" />
+  <input id="modal-mobile" placeholder="Mobile Number"
+         style="width:100%;padding:10px;margin-bottom:12px;border:1px solid #cbd5e1;border-radius:6px;" />
+
+  <div style="display:flex;gap:8px;margin-bottom:8px;">
+    <input id="modal-coupon" placeholder="Coupon code (optional)"
+           style="flex:1;padding:10px;border:1px solid #cbd5e1;border-radius:6px;text-transform:uppercase;" />
+    <button type="button" id="modal-apply-coupon"
+            style="padding:10px 16px;background:#6366f1;color:#fff;border:0;border-radius:6px;cursor:pointer;">Apply</button>
+  </div>
+  <div id="modal-coupon-message" style="font-size:13px;margin-bottom:12px;display:none;"></div>
+
+  <div style="display:flex;justify-content:space-between;align-items:center;padding:12px;background:#f8fafc;border-radius:6px;margin-bottom:16px;">
+    <span style="color:#64748b;">Amount Payable</span>
+    <span id="modal-fee-display" style="font-size:20px;font-weight:700;color:#0f172a;">₹0</span>
+  </div>
+  <input type="hidden" id="modal-amount" />
+
+  <button type="button" id="modal-pay-btn"
+          style="width:100%;padding:14px;background:#1e3a5f;color:#fff;border:0;border-radius:8px;font-size:16px;font-weight:600;cursor:pointer;">
+    Pay & Register
+  </button>
+</div>`;
+                            navigator.clipboard.writeText(snippet);
+                            toast.success('Payment button code copied to clipboard');
+                          }}
+                        >
+                          <Copy className="h-3 w-3 mr-1" />
+                          Copy
+                        </Button>
+                      </div>
+                      <div className="text-xs text-muted-foreground space-y-1">
+                        <p><strong>How it works:</strong></p>
+                        <ul className="list-disc list-inside space-y-0.5 ml-2">
+                          <li>The platform auto-detects <code className="bg-background px-1 rounded">#modal-pay-btn</code> and hooks its click.</li>
+                          <li>Coupon entered in <code className="bg-background px-1 rounded">#modal-coupon</code> is validated server-side; <code className="bg-background px-1 rounded">#modal-fee-display</code> updates with the discounted amount.</li>
+                          <li>On click → Razorpay checkout opens → server verifies the signature → the section is replaced with a "Payment Successful" message.</li>
+                          <li>You can keep the IDs and restyle freely — only the IDs are required for the platform to wire things up.</li>
+                        </ul>
+                      </div>
                     </CardContent>
                   </Card>
                 )}
