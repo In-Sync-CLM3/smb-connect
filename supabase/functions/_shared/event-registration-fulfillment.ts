@@ -165,14 +165,34 @@ export async function fulfillEventRegistrationPayment(
     })
     .eq("id", payment.id);
 
-  if (isNewUser && password) {
-    await sendWelcomeEmail(supabase, {
-      landing_page_id,
-      email: normalizedEmail,
-      first_name: first_name as string,
-      password,
-    });
-  }
+  // Fire-and-forget emails (won't block fulfillment response if they fail)
+  const emailCtx: PaymentEmailContext = {
+    landingPageId: landing_page_id,
+    associationId: association_id ?? null,
+    email: normalizedEmail,
+    firstName: first_name as string,
+    lastName: last_name as string,
+    phone: (phone as string) ?? null,
+    paymentId: payment.id,
+    razorpayPaymentId: ctx.razorpayPaymentId,
+    finalAmount: Number(final_amount ?? 0),
+    originalAmount: Number(original_amount ?? 0),
+    discountAmount: Number(discount_amount ?? 0),
+    paidAt: new Date(),
+  };
+
+  await Promise.allSettled([
+    sendPaymentSuccessEmail(supabase, emailCtx),
+    sendAdminPaymentNotification(supabase, emailCtx),
+    isNewUser && password
+      ? sendWelcomeEmail(supabase, {
+        landing_page_id,
+        email: normalizedEmail,
+        first_name: first_name as string,
+        password,
+      })
+      : Promise.resolve(),
+  ]);
 
   return {
     success: true,
@@ -182,6 +202,192 @@ export async function fulfillEventRegistrationPayment(
       ? "Payment successful! Check your email for login credentials."
       : "Payment successful! You can login with your existing account.",
   };
+}
+
+interface PaymentEmailContext {
+  landingPageId: string;
+  associationId: string | null;
+  email: string;
+  firstName: string;
+  lastName: string;
+  phone: string | null;
+  paymentId: string;
+  razorpayPaymentId: string;
+  finalAmount: number;
+  originalAmount: number;
+  discountAmount: number;
+  paidAt: Date;
+}
+
+function inr(n: number): string {
+  return "₹" + Number(n).toLocaleString("en-IN");
+}
+
+function escapeHtml(s: string): string {
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+async function sendPaymentSuccessEmail(
+  supabase: SupabaseClient,
+  ctx: PaymentEmailContext,
+): Promise<void> {
+  const resendApiKey = Deno.env.get("RESEND_API_KEY");
+  if (!resendApiKey) return;
+
+  try {
+    const { data: lp } = await supabase
+      .from("event_landing_pages")
+      .select("title, event_date, event_time, event_venue")
+      .eq("id", ctx.landingPageId)
+      .single();
+
+    const eventTitle = lp?.title ?? "Event";
+    const eventDate = formatEventDate(lp?.event_date ?? null);
+    const eventTime = lp?.event_time ?? "Details to be announced";
+    const eventVenue = lp?.event_venue ?? "Details to be announced";
+    const paidOn = ctx.paidAt.toLocaleString("en-IN", {
+      day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit",
+    });
+
+    const discountRow = ctx.discountAmount > 0
+      ? `<tr><td style="padding:10px 16px;border-bottom:1px solid #e2e8f0;font-weight:600;color:#64748b;">Original Price</td><td style="padding:10px 16px;border-bottom:1px solid #e2e8f0;text-decoration:line-through;color:#94a3b8;">${inr(ctx.originalAmount)}</td></tr>
+        <tr><td style="padding:10px 16px;border-bottom:1px solid #e2e8f0;font-weight:600;color:#16a34a;">Discount</td><td style="padding:10px 16px;border-bottom:1px solid #e2e8f0;color:#16a34a;">- ${inr(ctx.discountAmount)}</td></tr>`
+      : "";
+
+    const emailHtml = `<!DOCTYPE html><html><head><meta charset="utf-8"></head>
+<body style="font-family:'Segoe UI',Arial,sans-serif;line-height:1.6;color:#333;max-width:650px;margin:0 auto;background:#f5f5f5;">
+  <div style="background:linear-gradient(135deg,#16a34a 0%,#22c55e 100%);padding:36px 30px;text-align:center;">
+    <div style="background:#fff;width:64px;height:64px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;margin-bottom:12px;">
+      <span style="font-size:36px;color:#16a34a;">✓</span>
+    </div>
+    <h1 style="color:#fff;margin:0;font-size:26px;">Payment Successful</h1>
+    <p style="color:#dcfce7;margin:8px 0 0;font-size:14px;">Your registration for ${escapeHtml(eventTitle)} is confirmed</p>
+  </div>
+  <div style="background:#fff;padding:32px 30px;">
+    <p style="font-size:16px;">Hi <strong>${escapeHtml(ctx.firstName)}</strong>,</p>
+    <p style="font-size:15px;color:#444;">Thank you for your payment. Below is your receipt — please save it for your records.</p>
+
+    <h2 style="font-size:14px;color:#1e3a5f;border-bottom:2px solid #1e3a5f;display:inline-block;margin-top:24px;">PAYMENT RECEIPT</h2>
+    <table style="width:100%;border-collapse:collapse;background:#f8fafc;border-radius:8px;">
+      ${discountRow}
+      <tr><td style="padding:10px 16px;border-bottom:1px solid #e2e8f0;font-weight:600;color:#64748b;width:140px;">Amount Paid</td><td style="padding:10px 16px;border-bottom:1px solid #e2e8f0;font-weight:700;color:#16a34a;font-size:16px;">${inr(ctx.finalAmount)}</td></tr>
+      <tr><td style="padding:10px 16px;border-bottom:1px solid #e2e8f0;font-weight:600;color:#64748b;">Payment ID</td><td style="padding:10px 16px;border-bottom:1px solid #e2e8f0;font-family:monospace;font-size:13px;">${escapeHtml(ctx.razorpayPaymentId)}</td></tr>
+      <tr><td style="padding:10px 16px;font-weight:600;color:#64748b;">Paid On</td><td style="padding:10px 16px;">${paidOn}</td></tr>
+    </table>
+
+    <h2 style="font-size:14px;color:#1e3a5f;border-bottom:2px solid #1e3a5f;display:inline-block;margin-top:24px;">EVENT DETAILS</h2>
+    <table style="width:100%;border-collapse:collapse;background:#f8fafc;border-radius:8px;">
+      <tr><td style="padding:10px 16px;border-bottom:1px solid #e2e8f0;font-weight:600;color:#64748b;width:140px;">Event</td><td style="padding:10px 16px;border-bottom:1px solid #e2e8f0;">${escapeHtml(eventTitle)}</td></tr>
+      <tr><td style="padding:10px 16px;border-bottom:1px solid #e2e8f0;font-weight:600;color:#64748b;">Date</td><td style="padding:10px 16px;border-bottom:1px solid #e2e8f0;">${escapeHtml(eventDate)}</td></tr>
+      <tr><td style="padding:10px 16px;border-bottom:1px solid #e2e8f0;font-weight:600;color:#64748b;">Time</td><td style="padding:10px 16px;border-bottom:1px solid #e2e8f0;">${escapeHtml(eventTime)}</td></tr>
+      <tr><td style="padding:10px 16px;font-weight:600;color:#64748b;">Venue</td><td style="padding:10px 16px;">${escapeHtml(eventVenue)}</td></tr>
+    </table>
+
+    <p style="font-size:14px;color:#64748b;margin-top:28px;">If you have any questions about your registration, just reply to this email.</p>
+    <p style="font-size:15px;color:#333;margin-top:20px;">Warm regards,<br><strong style="color:#1e3a5f;">SMBConnect</strong></p>
+  </div>
+  <div style="background:#f8fafc;padding:18px 30px;text-align:center;border-top:1px solid #e2e8f0;">
+    <p style="color:#64748b;font-size:12px;margin:0;">© ${new Date().getFullYear()} SMBConnect. All rights reserved.</p>
+  </div>
+</body></html>`;
+
+    await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${resendApiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        from: "SMB Connect <noreply@smbconnect.in>",
+        to: [ctx.email],
+        subject: `Payment Successful — ${eventTitle}`,
+        html: emailHtml,
+      }),
+    });
+  } catch (err) {
+    console.error("payment-success email error:", err);
+  }
+}
+
+async function sendAdminPaymentNotification(
+  supabase: SupabaseClient,
+  ctx: PaymentEmailContext,
+): Promise<void> {
+  const resendApiKey = Deno.env.get("RESEND_API_KEY");
+  if (!resendApiKey) return;
+  if (!ctx.associationId) return;
+
+  try {
+    const [{ data: association }, { data: lp }] = await Promise.all([
+      supabase
+        .from("associations")
+        .select("name, contact_email")
+        .eq("id", ctx.associationId)
+        .single(),
+      supabase
+        .from("event_landing_pages")
+        .select("title")
+        .eq("id", ctx.landingPageId)
+        .single(),
+    ]);
+
+    const adminEmail = association?.contact_email;
+    if (!adminEmail) return;
+
+    const eventTitle = lp?.title ?? "Event";
+    const orgName = association?.name ?? "your organization";
+    const fullName = `${ctx.firstName} ${ctx.lastName}`.trim();
+    const paidOn = ctx.paidAt.toLocaleString("en-IN", {
+      day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit",
+    });
+
+    const emailHtml = `<!DOCTYPE html><html><head><meta charset="utf-8"></head>
+<body style="font-family:'Segoe UI',Arial,sans-serif;line-height:1.6;color:#333;max-width:650px;margin:0 auto;background:#f5f5f5;">
+  <div style="background:linear-gradient(135deg,#1e3a5f 0%,#2d5a87 100%);padding:32px 30px;text-align:center;">
+    <h1 style="color:#fff;margin:0;font-size:22px;">New Paid Registration</h1>
+    <p style="color:#cbd5e1;margin:6px 0 0;font-size:14px;">${escapeHtml(eventTitle)}</p>
+  </div>
+  <div style="background:#fff;padding:30px;">
+    <p style="font-size:15px;">Hi ${escapeHtml(orgName)} team,</p>
+    <p style="font-size:15px;color:#444;">A new attendee just completed payment for <strong>${escapeHtml(eventTitle)}</strong>. Details below:</p>
+
+    <h2 style="font-size:14px;color:#1e3a5f;border-bottom:2px solid #1e3a5f;display:inline-block;margin-top:20px;">REGISTRANT</h2>
+    <table style="width:100%;border-collapse:collapse;background:#f8fafc;border-radius:8px;">
+      <tr><td style="padding:10px 16px;border-bottom:1px solid #e2e8f0;font-weight:600;color:#64748b;width:140px;">Name</td><td style="padding:10px 16px;border-bottom:1px solid #e2e8f0;">${escapeHtml(fullName) || "—"}</td></tr>
+      <tr><td style="padding:10px 16px;border-bottom:1px solid #e2e8f0;font-weight:600;color:#64748b;">Email</td><td style="padding:10px 16px;border-bottom:1px solid #e2e8f0;"><a href="mailto:${escapeHtml(ctx.email)}" style="color:#0284c7;">${escapeHtml(ctx.email)}</a></td></tr>
+      <tr><td style="padding:10px 16px;font-weight:600;color:#64748b;">Phone</td><td style="padding:10px 16px;">${escapeHtml(ctx.phone || "—")}</td></tr>
+    </table>
+
+    <h2 style="font-size:14px;color:#1e3a5f;border-bottom:2px solid #1e3a5f;display:inline-block;margin-top:20px;">PAYMENT</h2>
+    <table style="width:100%;border-collapse:collapse;background:#f8fafc;border-radius:8px;">
+      <tr><td style="padding:10px 16px;border-bottom:1px solid #e2e8f0;font-weight:600;color:#64748b;width:140px;">Amount</td><td style="padding:10px 16px;border-bottom:1px solid #e2e8f0;font-weight:700;color:#16a34a;">${inr(ctx.finalAmount)}</td></tr>
+      ${ctx.discountAmount > 0 ? `<tr><td style="padding:10px 16px;border-bottom:1px solid #e2e8f0;font-weight:600;color:#64748b;">Discount Applied</td><td style="padding:10px 16px;border-bottom:1px solid #e2e8f0;">${inr(ctx.discountAmount)} (off ${inr(ctx.originalAmount)})</td></tr>` : ""}
+      <tr><td style="padding:10px 16px;border-bottom:1px solid #e2e8f0;font-weight:600;color:#64748b;">Razorpay ID</td><td style="padding:10px 16px;border-bottom:1px solid #e2e8f0;font-family:monospace;font-size:13px;">${escapeHtml(ctx.razorpayPaymentId)}</td></tr>
+      <tr><td style="padding:10px 16px;font-weight:600;color:#64748b;">Paid On</td><td style="padding:10px 16px;">${paidOn}</td></tr>
+    </table>
+
+    <p style="font-size:13px;color:#64748b;margin-top:24px;">View all registrations in the <strong>Event Registrations</strong> tab of your admin dashboard.</p>
+  </div>
+  <div style="background:#f8fafc;padding:16px 30px;text-align:center;border-top:1px solid #e2e8f0;">
+    <p style="color:#64748b;font-size:12px;margin:0;">© ${new Date().getFullYear()} SMBConnect. Automated notification.</p>
+  </div>
+</body></html>`;
+
+    await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${resendApiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        from: "SMB Connect <noreply@smbconnect.in>",
+        to: [adminEmail],
+        subject: `New paid registration: ${fullName || ctx.email} — ${eventTitle}`,
+        html: emailHtml,
+      }),
+    });
+  } catch (err) {
+    console.error("admin-payment notification error:", err);
+  }
 }
 
 async function sendWelcomeEmail(
