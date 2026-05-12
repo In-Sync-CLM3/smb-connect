@@ -73,6 +73,11 @@ serve(async (req) => {
     const campaign = { id: setupResult.campaign_id };
     const recipients = setupResult.recipients as { email: string; name: string }[];
 
+    const applyMergeTags = (input: string, ctx: { name: string; email: string }) =>
+      input
+        .replaceAll('{{name}}', ctx.name ?? '')
+        .replaceAll('{{email}}', ctx.email ?? '');
+
     const results = {
       sent: 0,
       failed: 0,
@@ -94,12 +99,18 @@ serve(async (req) => {
       
       const sendPromise = (async () => {
         try {
+          const personalisedHtml = applyMergeTags(emailData.bodyHtml, recipient);
+          const personalisedSubject = applyMergeTags(emailData.subject, recipient);
+          const personalisedText = emailData.bodyText
+            ? applyMergeTags(emailData.bodyText, recipient)
+            : personalisedHtml.replace(/<[^>]*>/g, '');
+
           const { data: emailResult, error: emailError } = await resend.emails.send({
             from: `${emailData.senderName || 'SMB Connect'} <noreply@smbconnect.in>`,
             to: [recipient.email],
-            subject: emailData.subject,
-            html: emailData.bodyHtml,
-            text: emailData.bodyText || emailData.bodyHtml.replace(/<[^>]*>/g, ''),
+            subject: personalisedSubject,
+            html: personalisedHtml,
+            text: personalisedText,
             reply_to: emailData.senderEmail,
             headers: {
               'X-Bulk-List-ID': emailData.listId,
